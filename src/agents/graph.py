@@ -5,8 +5,9 @@ from agents.state import GraphState, Task, TaskStatus
 from utils.a2a_client import call_a2a_agent
 
 
-# A2A endpoint of the gas station sub-agent (see gas_agent/__main__.py).
+# A2A endpoints of the sub-agents (see each agent's __main__.py).
 GAS_AGENT_URL = 'http://127.0.0.1:9998'
+FOOD_AGENT_URL = 'http://127.0.0.1:9997'
 
 # Agents the orchestrator is allowed to route work to. Keep this in sync with
 # the conditional edges registered below.
@@ -34,6 +35,14 @@ async def orchestrator_node(state: GraphState) -> dict:
                 id='gas-1',
                 name='Find gas stations',
                 assigned_agent='gas_agent',
+            )
+        )
+    if 'food' in user_text:
+        tasks.append(
+            Task(
+                id='food-1',
+                name='Find restaurants',
+                assigned_agent='food_agent',
             )
         )
 
@@ -93,12 +102,36 @@ async def gas_agent_node(state: GraphState) -> dict:
 
 
 async def food_agent_node(state: GraphState) -> dict:
-    """Food sub-agent node that handles food-point tasks and returns its result"""
+    """Food sub-agent node: calls the food agent over A2A and records the result.
 
-    # TODO: Implement over A2A like gas_agent_node once the orchestrator plans food tasks.
-    #       Must mark the handled task as COMPLETED/FAILED to avoid looping.
+    The call goes through the A2A protocol (agent card + JSON-RPC), so the graph
+    stays decoupled from the sub-agent implementation. Each handled task is marked
+    COMPLETED/FAILED so the orchestrator loop terminates instead of looping.
+    """
 
-    return {}
+    user_text = str(state.user_input.content)
+
+    updated_tasks: list[Task] = []
+    for task in state.tasks:
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
+            try:
+                result = await call_a2a_agent(user_text, FOOD_AGENT_URL)
+                updated_tasks.append(
+                    task.model_copy(update={'result': result, 'status': TaskStatus.COMPLETED})
+                )
+            except Exception as exc:
+                updated_tasks.append(
+                    task.model_copy(
+                        update={
+                            'result': f'Food agent call failed: {exc}',
+                            'status': TaskStatus.FAILED,
+                        }
+                    )
+                )
+        else:
+            updated_tasks.append(task)
+
+    return {'tasks': updated_tasks}
 
 
 async def response_synthesizer_node(state: GraphState) -> dict:
@@ -109,7 +142,7 @@ async def response_synthesizer_node(state: GraphState) -> dict:
     if results:
         final_text = '\n\n'.join(results)
     else:
-        final_text = "I couldn't handle that request. Try asking for gas stations."
+        final_text = "I couldn't handle that request. Try asking for gas stations or food."
 
     return {'messages': [AIMessage(content=final_text)]}
 
