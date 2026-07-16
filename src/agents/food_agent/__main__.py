@@ -1,5 +1,4 @@
 import uvicorn
-
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (
     create_agent_card_routes,
@@ -13,7 +12,7 @@ from a2a.types import (
     AgentSkill,
 )
 from .agent_executor import (
-    FoodPointAgentExecutor,  # type: ignore[import-untyped]
+    FoodAgentExecutor,  # type: ignore[import-untyped]
 )
 from starlette.applications import Starlette
 
@@ -21,20 +20,24 @@ from starlette.applications import Starlette
 if __name__ == '__main__':
     # Define the abilities or functions that agent can perform.
     skill = AgentSkill(
-        id='find closest food point',
-        name='Find Closest Food Point',
-        description='Returns mocked closest food points.',
+        id='find-restaurants-and-dining',
+        name='Find Restaurants and Dining Options',
+        description='Finds restaurants, cafes, and dining options near the vehicle or a specified location with optional cuisine filters.',
         input_modes=['text/plain'],
         output_modes=['text/plain'],
-        tags=['food-points'],
-        examples=['find the closest food-point'],
+        tags=['food', 'restaurants', 'dining', 'cuisine'],
+        examples=[
+            'find some good sushi nearby',
+            'I want to eat pizza in Radom',
+            'find a restaurant near Berlin'
+        ],
     )
 
     # Publish metadata that A2A clients use to discover the agent
     agent_card = AgentCard(
-        name='Gas Station Agent',  # Identity
-        description='Mock sub-agent for finding closest food-point',
-        version='0.0.1',
+        name='Food Agent',
+        description='Sub-agent for finding food and drink options based on cuisine preference and location constraints.',
+        version='1.0.0',
         # Default Media Types for the agent's interactions
         default_input_modes=['text/plain'],
         default_output_modes=['text/plain'],
@@ -55,7 +58,7 @@ if __name__ == '__main__':
 
     # Connect incoming A2A requests to the executor and task store.
     request_handler = DefaultRequestHandler(
-        agent_executor=FoodPointAgentExecutor(),
+        agent_executor=FoodAgentExecutor(),
         # The task_store is used to store and manage tasks
         task_store=InMemoryTaskStore(),
         agent_card=agent_card,
