@@ -1,7 +1,12 @@
+from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 
-from agents.state import GraphState, TaskStatus
+from agents.state import GraphState, Task, TaskStatus
+from utils.a2a_client import call_a2a_agent
 
+
+# A2A endpoint of the gas station sub-agent (see gas_agent/__main__.py).
+GAS_AGENT_URL = 'http://127.0.0.1:9998'
 
 # Agents the orchestrator is allowed to route work to. Keep this in sync with
 # the conditional edges registered below.
@@ -9,11 +14,30 @@ ROUTABLE_AGENTS = {'gas_agent', 'food_agent'}
 
 
 async def orchestrator_node(state: GraphState) -> dict:
-    """Orchestrator node that decides which sub-agent to call next based on the current state"""
+    """Orchestrator node that decides which sub-agent to call next based on the current state.
 
-    # TODO: Implement logic to decide which sub-agent to call next based on the current state
+    Kept intentionally simple: on the first pass it plans the work by turning the
+    user request into tasks. Once tasks exist it does not re-plan, so the graph
+    just drains the outstanding tasks and then falls through to the synthesizer.
+    """
 
-    return {}
+    # Work has already been planned on a previous pass — nothing to add.
+    if state.tasks:
+        return {}
+
+    user_text = str(state.user_input.content).lower()
+
+    tasks: list[Task] = []
+    if 'gas' in user_text:
+        tasks.append(
+            Task(
+                id='gas-1',
+                name='Find gas stations',
+                assigned_agent='gas_agent',
+            )
+        )
+
+    return {'tasks': tasks}
 
 
 def route_from_orchestrator(state: GraphState) -> str:
@@ -36,29 +60,58 @@ def route_from_orchestrator(state: GraphState) -> str:
 
 
 async def gas_agent_node(state: GraphState) -> dict:
-    """Gas sub-agent node that handles gas-station tasks and returns its result"""
+    """Gas sub-agent node: calls the gas station agent over A2A and records the result.
 
-    # TODO: Implement logic to call the Gas sub-agent and return its result.
-    #       Must mark the handled task as COMPLETED/FAILED to avoid looping.
+    The call goes through the A2A protocol (agent card + JSON-RPC), so the graph
+    stays decoupled from the sub-agent implementation. Each handled task is marked
+    COMPLETED/FAILED so the orchestrator loop terminates instead of looping.
+    """
 
-    return {}
+    user_text = str(state.user_input.content)
+
+    updated_tasks: list[Task] = []
+    for task in state.tasks:
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
+            try:
+                result = await call_a2a_agent(user_text, GAS_AGENT_URL)
+                updated_tasks.append(
+                    task.model_copy(update={'result': result, 'status': TaskStatus.COMPLETED})
+                )
+            except Exception as exc:
+                updated_tasks.append(
+                    task.model_copy(
+                        update={
+                            'result': f'Gas agent call failed: {exc}',
+                            'status': TaskStatus.FAILED,
+                        }
+                    )
+                )
+        else:
+            updated_tasks.append(task)
+
+    return {'tasks': updated_tasks}
 
 
 async def food_agent_node(state: GraphState) -> dict:
     """Food sub-agent node that handles food-point tasks and returns its result"""
 
-    # TODO: Implement logic to call the Food sub-agent and return its result.
+    # TODO: Implement over A2A like gas_agent_node once the orchestrator plans food tasks.
     #       Must mark the handled task as COMPLETED/FAILED to avoid looping.
 
     return {}
 
 
 async def response_synthesizer_node(state: GraphState) -> dict:
-    """Response synthesizer node that combines results from sub-agents and generates a final response"""
+    """Response synthesizer node that combines sub-agent results into a final message"""
 
-    # TODO: Implement logic to synthesize results from sub-agents and generate a final response
+    results = [task.result for task in state.tasks if task.result]
 
-    return {}
+    if results:
+        final_text = '\n\n'.join(results)
+    else:
+        final_text = "I couldn't handle that request. Try asking for gas stations."
+
+    return {'messages': [AIMessage(content=final_text)]}
 
 
 graph_builder = StateGraph(GraphState)
