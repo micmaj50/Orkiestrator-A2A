@@ -2,27 +2,18 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 
 from agents.state import GraphState, Task, TaskStatus
-from utils.a2a_client import call_a2a_agent
+from utils.a2a_client import call_sub_agent
 
 
-# A2A endpoints of the sub-agents (see each agent's __main__.py).
 GAS_AGENT_URL = 'http://127.0.0.1:9998'
 FOOD_AGENT_URL = 'http://127.0.0.1:9997'
 
-# Agents the orchestrator is allowed to route work to. Keep this in sync with
-# the conditional edges registered below.
 ROUTABLE_AGENTS = {'gas_agent', 'food_agent'}
 
 
 async def orchestrator_node(state: GraphState) -> dict:
-    """Orchestrator node that decides which sub-agent to call next based on the current state.
+    """Simple orchestrator node that decides which sub-agent to call next based on the current state"""
 
-    Kept intentionally simple: on the first pass it plans the work by turning the
-    user request into tasks. Once tasks exist it does not re-plan, so the graph
-    just drains the outstanding tasks and then falls through to the synthesizer.
-    """
-
-    # Work has already been planned on a previous pass — nothing to add.
     if state.tasks:
         return {}
 
@@ -50,31 +41,17 @@ async def orchestrator_node(state: GraphState) -> dict:
 
 
 def route_from_orchestrator(state: GraphState) -> str:
-    """Route to the next agent based on the orchestrator's tasks list.
-
-    Returns the agent assigned to the first in-progress task, as long as it is a
-    known routable agent. Anything unknown (or no pending work) falls through to
-    the response synthesizer, so the graph never routes to an edge that does not
-    exist.
-    """
+    """Route to the next agent based on the orchestrator's tasks list."""
 
     for task in state.tasks:
-        if (
-            task.status == TaskStatus.IN_PROGRESS
-            and task.assigned_agent in ROUTABLE_AGENTS
-        ):
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent in ROUTABLE_AGENTS:
             return task.assigned_agent
 
     return 'response_synthesizer'
 
 
 async def gas_agent_node(state: GraphState) -> dict:
-    """Gas sub-agent node: calls the gas station agent over A2A and records the result.
-
-    The call goes through the A2A protocol (agent card + JSON-RPC), so the graph
-    stays decoupled from the sub-agent implementation. Each handled task is marked
-    COMPLETED/FAILED so the orchestrator loop terminates instead of looping.
-    """
+    """Gas sub-agent node: calls the gas station agent over A2A and records the result."""
 
     user_text = str(state.user_input.content)
 
@@ -82,19 +59,17 @@ async def gas_agent_node(state: GraphState) -> dict:
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
             try:
-                result = await call_a2a_agent(user_text, GAS_AGENT_URL)
-                updated_tasks.append(
-                    task.model_copy(update={'result': result, 'status': TaskStatus.COMPLETED})
-                )
+                result = await call_sub_agent(user_text, GAS_AGENT_URL)
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+                updated_tasks.append(task)
+
             except Exception as exc:
-                updated_tasks.append(
-                    task.model_copy(
-                        update={
-                            'result': f'Gas agent call failed: {exc}',
-                            'status': TaskStatus.FAILED,
-                        }
-                    )
-                )
+                task.status = TaskStatus.FAILED
+                task.result = f'Gas agent call failed: {exc}'
+                updated_tasks.append(task)
+
         else:
             updated_tasks.append(task)
 
@@ -102,12 +77,7 @@ async def gas_agent_node(state: GraphState) -> dict:
 
 
 async def food_agent_node(state: GraphState) -> dict:
-    """Food sub-agent node: calls the food agent over A2A and records the result.
-
-    The call goes through the A2A protocol (agent card + JSON-RPC), so the graph
-    stays decoupled from the sub-agent implementation. Each handled task is marked
-    COMPLETED/FAILED so the orchestrator loop terminates instead of looping.
-    """
+    """Food sub-agent node: calls the food agent over A2A and records the result."""
 
     user_text = str(state.user_input.content)
 
@@ -115,19 +85,16 @@ async def food_agent_node(state: GraphState) -> dict:
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
             try:
-                result = await call_a2a_agent(user_text, FOOD_AGENT_URL)
-                updated_tasks.append(
-                    task.model_copy(update={'result': result, 'status': TaskStatus.COMPLETED})
-                )
+                result = await call_sub_agent(user_text, FOOD_AGENT_URL)
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+                updated_tasks.append(task)
+
             except Exception as exc:
-                updated_tasks.append(
-                    task.model_copy(
-                        update={
-                            'result': f'Food agent call failed: {exc}',
-                            'status': TaskStatus.FAILED,
-                        }
-                    )
-                )
+                task.status = TaskStatus.FAILED
+                task.result = f'Food agent call failed: {exc}'
+                updated_tasks.append(task)
         else:
             updated_tasks.append(task)
 
@@ -137,7 +104,10 @@ async def food_agent_node(state: GraphState) -> dict:
 async def response_synthesizer_node(state: GraphState) -> dict:
     """Response synthesizer node that combines sub-agent results into a final message"""
 
-    results = [task.result for task in state.tasks if task.result]
+    results = []
+    for task in state.tasks:
+        if task.result:
+            results.append(task.result)
 
     if results:
         final_text = '\n\n'.join(results)

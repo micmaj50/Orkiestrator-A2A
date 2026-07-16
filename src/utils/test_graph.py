@@ -1,17 +1,10 @@
-"""Simple manual tester for the LangGraph orchestration graph.
+"""
+Temporary test script to run the graph with a sample input.
 
-Runs the compiled graph end-to-end for a single user query and prints the
-sub-agent tasks and the final synthesized answer.
+uv run python -m agents.gas_agent
+uv run python -m agents.food_agent
+uv run python -m utils.test_graph
 
-The graph talks to the sub-agents over A2A, so the relevant sub-agent servers
-must be running first, e.g.:
-
-    uv run python -m agents.gas_agent     # port 9998
-    uv run python -m agents.food_agent    # port 9997
-
-Then, from the repository root:
-
-    uv run python -m utils.test_graph "find gas and food near Big Ben"
 """
 
 import asyncio
@@ -27,7 +20,7 @@ async def run_graph(question: str) -> None:
     # Build the initial graph state from the user's question
     state = GraphState(user_input=HumanMessage(content=question))
 
-    # Invoke the graph: orchestrator -> sub-agents (over A2A) -> synthesizer
+    # Invoke the graph: orchestrator -> sub-agents -> synthesizer
     result = await graph.ainvoke(state)
 
     # Show what the orchestrator planned and how each task ended

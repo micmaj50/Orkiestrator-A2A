@@ -1,9 +1,4 @@
-"""Minimal A2A client helper for calling sub-agents over the A2A protocol.
-
-Keeps the graph nodes decoupled from the sub-agent implementations: a node
-talks to a sub-agent purely through its A2A interface (agent card + JSON-RPC),
-exactly like any other external A2A client would.
-"""
+"""Minimal A2A client helper for calling sub-agents over the A2A protocol."""
 
 import httpx
 
@@ -14,12 +9,8 @@ from a2a.types import Role, SendMessageRequest
 from utils.a2a_response import extract_artifact_text
 
 
-async def call_a2a_agent(user_request: str, agent_url: str) -> str:
-    """Send a text request to an A2A sub-agent and return its text response.
-
-    Resolves the agent card to discover the A2A interface, sends the request as
-    an A2A user message and returns the text of the last artifact produced.
-    """
+async def call_sub_agent(user_request: str, agent_url: str) -> str:
+    """Send a text request to an A2A sub-agent and return its text response."""
 
     # Resolve the agent card to discover its A2A interface and capabilities
     async with httpx.AsyncClient() as httpx_client:
@@ -27,11 +18,11 @@ async def call_a2a_agent(user_request: str, agent_url: str) -> str:
             httpx_client=httpx_client,
             base_url=agent_url,
         )
-        agent_card = await resolver.get_agent_card()
+        sub_agent_card = await resolver.get_agent_card()
 
     # Create an A2A client from the card using the default client configuration
     client = await create_client(
-        agent=agent_card,
+        agent=sub_agent_card,
         client_config=ClientConfig(streaming=False),
     )
 
@@ -48,7 +39,10 @@ async def call_a2a_agent(user_request: str, agent_url: str) -> str:
             if text:
                 extracted_texts.append(text)
 
-        return extracted_texts[-1] if extracted_texts else ''
+        if not extracted_texts:
+            return ''
+        
+        return extracted_texts[-1]
 
     finally:
         await client.close()
