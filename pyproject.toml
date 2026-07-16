@@ -1,0 +1,25 @@
+[project]
+name = "a2a-driver-assistant"
+version = "0.1.0"
+description = "A2A driver assistant prototype with an orchestrator and one mock gas station agent."
+requires-python = "==3.12.*"
+dependencies = [
+    "a2a-sdk",
+    "sse-starlette>=3.4.5",
+    "starlette",
+    "uvicorn",
+    "httpx",
+    "langgraph>=1.2.9",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
