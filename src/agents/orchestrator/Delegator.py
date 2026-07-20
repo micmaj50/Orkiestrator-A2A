@@ -49,10 +49,8 @@ You must respond strictly in JSON format. Return only task. Here is he form:
     "tasks":[
     {{
         "id": "int",
-        "status": "in_progress",
         "assigned_agent": (one of the agent ids listed above),
-        "query": "a concise, self-contained request for this sub-agent",
-        "result": null
+        "query": "a concise, self-contained request for this sub-agent"
     }}
     ]
 }}
