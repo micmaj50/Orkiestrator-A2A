@@ -26,7 +26,7 @@ class GasSearchParams(BaseModel):
         )
     )
     target_location: Optional[str] = Field(
-        default=None,
+        default=None, 
         description=(
             "A specific location provided by the driver to search around. "
             "Can be a city (e.g., 'London', 'Radom'), a street (e.g., 'Oxford Street', 'Marszałkowska'), "
@@ -37,7 +37,7 @@ class GasSearchParams(BaseModel):
         )
     )
     search_radius_meters: int = Field(
-        default=3000,
+        default=3000, 
         description=(
             "The search radius in meters. Convert spoken distance units (e.g., 'within 10km') "
             "to integer meters (10000). Default to 3000 if not specified by the driver."
@@ -48,12 +48,12 @@ class GasSearchParams(BaseModel):
 async def extract_gas_search_params(driver_command: str) -> GasSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
-
+    
     completion = await client.beta.chat.completions.parse(
         model="gpt-4o-mini",
         messages=[
             {
-                "role": "system",
+                "role": "system", 
                 "content": (
                     "You are an NLP analysis module inside an in-car voice assistant system. "
                     "Your sole task is to extract gas station search parameters from the driver's spoken command "
@@ -61,7 +61,7 @@ async def extract_gas_search_params(driver_command: str) -> GasSearchParams:
                 )
             },
             {
-                "role": "user",
+                "role": "user", 
                 "content": driver_command
             }
         ],
@@ -78,15 +78,15 @@ async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
         "q": location,
         "apiKey": api_key
     }
-
-    async with httpx.AsyncClient() as client:
+    
+    async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-
+        
         if not data.get("items"):
             raise ValueError(f"Could not resolve coordinates for: '{location}'")
-
+            
         position = data["items"][0]["position"]
         return position["lat"], position["lng"]
 
@@ -100,11 +100,11 @@ async def browse_gas_stations(lat: float, lng: float, radius: int, api_key: str)
         "limit": 5,
         "apiKey": api_key
     }
-
+    
     if radius:
         params["in"] = f"circle:{lat},{lng};r={radius}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -112,6 +112,9 @@ async def browse_gas_stations(lat: float, lng: float, radius: int, api_key: str)
 
 class GasStationAgent:
     """Sub-agent that resolves constraints and fetches real gas stations via HERE API."""
+
+    # HERE Category ID for Gas Stations
+    GAS_STATION_CATEGORY_ID = "700-7600-0116"
 
     async def invoke(self, user_request: str, car_lat: Optional[float] = None, car_lng: Optional[float] = None) -> str:
         here_api_key = os.environ.get("HERE_API_KEY")
@@ -121,7 +124,7 @@ class GasStationAgent:
         try:
             # Extract parameters using OpenAI
             search_params = await extract_gas_search_params(user_request)
-
+            
             # Resolve Location to Coordinates
             if search_params.use_current_location:
                 if car_lat is None or car_lng is None:
@@ -137,13 +140,28 @@ class GasStationAgent:
 
             # Fetch Data from HERE API
             raw_results = await browse_gas_stations(
-                lat=target_lat,
-                lng=target_lng,
-                radius=search_params.search_radius_meters,
+                lat=target_lat, 
+                lng=target_lng, 
+                radius=search_params.search_radius_meters, 
                 api_key=here_api_key
             )
-
+            
             items = raw_results.get("items", [])
+            
+            filtered_items = []
+            for item in items:
+                categories = item.get("categories", [])
+                
+                is_primary_gas_station = any(
+                    cat.get("id") == self.GAS_STATION_CATEGORY_ID and cat.get("primary") is True
+                    for cat in categories
+                )
+                
+                if is_primary_gas_station:
+                    filtered_items.append(item)
+            
+            items = filtered_items
+
             if not items:
                 return f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
 
@@ -158,9 +176,9 @@ class GasStationAgent:
                     distance_str = f"{distance_km:.2f} km away"
                 else:
                     distance_str = f"{distance_km:.2f} km from {location_name}"
-
+                
                 response_lines.append(f"{i}. {name} - {address} ({distance_str})")
-
+                
             return "\n".join(response_lines)
 
         except Exception as e:
@@ -173,24 +191,21 @@ class GasStationAgentExecutor(AgentExecutor):
     def __init__(self) -> None:
         self.agent = GasStationAgent()
 
-    # Implement the execute method required by the AgentExecutor base class
     async def execute(
         self,
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
 
-        # Reuse the current task or create one for a new request
         if context.current_task:
             task = context.current_task
         else:
             task = new_task_from_user_message(context.message)
             await event_queue.enqueue_event(task)
 
-        # Mark the task as working in EventQueue
         task_updater = TaskUpdater(
-            event_queue=event_queue,
-            task_id=task.id,
+            event_queue=event_queue, 
+            task_id=task.id, 
             context_id=task.context_id
         )
         await task_updater.update_status(
@@ -198,11 +213,8 @@ class GasStationAgentExecutor(AgentExecutor):
             message=new_text_message('Processing gas station search request...'),
         )
 
-        # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
-
-        # Change this if the Orchestrator sends car GPS in a different field.
-        # Currently defaults to Warsaw Center coordinates as a fallback mock.
+        
         car_lat = getattr(context, 'car_lat', 52.2297)
         car_lng = getattr(context, 'car_lng', 21.0122)
 
@@ -211,18 +223,16 @@ class GasStationAgentExecutor(AgentExecutor):
         else:
             result = 'No text input is provided!'
 
-        # Add the agent response as a task artifact to EventQueue
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result,
+                    text=result, 
                     media_type='text/plain'
                 )
             ]
         )
         print('GasStationAgent result: ', result)
 
-        # Mark the task as completed
         await task_updater.update_status(
             state=TaskState.TASK_STATE_COMPLETED,
             message=new_text_message('Gas station request is completed!'),

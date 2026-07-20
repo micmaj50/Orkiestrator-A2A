@@ -13,8 +13,8 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 class Task(BaseModel):
-    id: str
-    name: str
+    id: int
+    query: str | None = None
     status: TaskStatus = TaskStatus.IN_PROGRESS
     assigned_agent: str | None = None
     result: str | None = None

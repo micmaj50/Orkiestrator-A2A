@@ -12,6 +12,8 @@ from a2a.types import (
     AgentInterface,
     AgentSkill,
 )
+
+from config import get_bind_host, get_orchestrator_port, get_orchestrator_url
 from .agent_executor import (
     OrchestratorExecutor,  # type: ignore[import-untyped]
 )
@@ -45,7 +47,7 @@ if __name__ == '__main__':
             AgentInterface(
                 protocol_binding='JSONRPC',
                 # Each agents exposes its A2A interface on a separate local port
-                url='http://127.0.0.1:9999',
+                url=get_orchestrator_url(),
                 protocol_version='1.0',
             )
         ],
@@ -82,4 +84,4 @@ if __name__ == '__main__':
 
     # Create a web app with the defined routes
     app = Starlette(routes=routes)
-    uvicorn.run(app, host='127.0.0.1', port=9999)
+    uvicorn.run(app, host=get_bind_host(), port=get_orchestrator_port())

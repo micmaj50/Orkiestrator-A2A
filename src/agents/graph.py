@@ -2,42 +2,65 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 
 from agents.state import GraphState, Task, TaskStatus
+from agents.orchestrator.Llm import Llm
+from agents.orchestrator.Delegator import Delegator
+from agents.synthesizer import Synthesizer
+from agents.gas_agent import agent_card as gas_agent_card
+from agents.food_agent import agent_card as food_agent_card
 from utils.a2a_client import call_sub_agent
 
+from config import get_food_agent_url, get_gas_agent_url
 
-GAS_AGENT_URL = 'http://127.0.0.1:9998'
-FOOD_AGENT_URL = 'http://127.0.0.1:9997'
 
-ROUTABLE_AGENTS = {'gas_agent', 'food_agent'}
+SUB_AGENT_CARDS = {
+    'gas_agent': gas_agent_card,
+    'food_agent': food_agent_card,
+}
+ROUTABLE_AGENTS = set(SUB_AGENT_CARDS)
+
+llm: Llm | None = None
+delegator: Delegator | None = None
+synthesizer = Synthesizer()
+
 
 async def orchestrator_node(state: GraphState) -> dict:
-    """
-    Temporary orchestrator node that decides which sub-agent to call next based on the current state.
-    In the future, this will be integrated with a more advanced orchestrator agent.
-    """
+    """Orchestrator node that asks the LLM (Delegator) which sub-agent(s) to call."""
+
+    global llm, delegator
 
     if state.tasks:
         return {}
 
-    user_text = str(state.user_input.content).lower()
+    if delegator is None:
+        if llm is None:
+            llm = Llm()
+        delegator = Delegator(Llm=llm, AgentCards=SUB_AGENT_CARDS)
+
+    raw = delegator.invoke(state, None)
+    if isinstance(raw, dict):
+        items = raw.get('tasks', [])
+    else:
+        items = []
 
     tasks: list[Task] = []
-    if 'gas' in user_text:
-        tasks.append(
-            Task(
-                id='gas-1',
-                name='Find gas stations',
-                assigned_agent='gas_agent',
-            )
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        agent = item.get('assigned_agent')
+        if agent not in ROUTABLE_AGENTS:
+            continue
+
+        try:
+            task_id = int(item.get('id'))
+        except (TypeError, ValueError):
+            task_id = index
+
+        new_task = Task(
+            id=task_id,
+            assigned_agent=agent,
+            query=item.get('query'),
         )
-    if 'food' in user_text:
-        tasks.append(
-            Task(
-                id='food-1',
-                name='Find restaurants',
-                assigned_agent='food_agent',
-            )
-        )
+        tasks.append(new_task)
 
     return {'tasks': tasks}
 
@@ -55,70 +78,91 @@ def route_from_orchestrator(state: GraphState) -> str:
 async def gas_agent_node(state: GraphState) -> dict:
     """Gas sub-agent node: calls the gas station agent over A2A and records the result."""
 
-    user_text = str(state.user_input.content)
-
     updated_tasks: list[Task] = []
+    produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
             try:
-                result = await call_sub_agent(user_text, GAS_AGENT_URL)
+                query = task.query or str(state.user_input.content)
+                result = await call_sub_agent(query, get_gas_agent_url())
 
                 task.status = TaskStatus.COMPLETED
                 task.result = result
-                updated_tasks.append(task)
 
             except Exception as exc:
                 task.status = TaskStatus.FAILED
                 task.result = f'Gas agent call failed: {exc}'
-                updated_tasks.append(task)
+
+            produced = task.result
+            updated_tasks.append(task)
 
         else:
             updated_tasks.append(task)
 
-    return {'tasks': updated_tasks}
+    output: dict = {'tasks': updated_tasks}
+    if produced:
+        output['messages'] = [AIMessage(content=produced)]
+    return output
 
 
 async def food_agent_node(state: GraphState) -> dict:
     """Food sub-agent node: calls the food agent over A2A and records the result."""
 
-    user_text = str(state.user_input.content)
-
     updated_tasks: list[Task] = []
+    produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
             try:
-                result = await call_sub_agent(user_text, FOOD_AGENT_URL)
+                # Prefer the task-specific query; fall back to the full user input.
+                query = task.query or str(state.user_input.content)
+                result = await call_sub_agent(query, get_food_agent_url())
 
                 task.status = TaskStatus.COMPLETED
                 task.result = result
-                updated_tasks.append(task)
 
             except Exception as exc:
                 task.status = TaskStatus.FAILED
                 task.result = f'Food agent call failed: {exc}'
-                updated_tasks.append(task)
+
+            produced = task.result
+            updated_tasks.append(task)
+
         else:
             updated_tasks.append(task)
 
-    return {'tasks': updated_tasks}
+    output: dict = {'tasks': updated_tasks}
+    if produced:
+        # Publish the result on messages so the synthesizer can read it.
+        output['messages'] = [AIMessage(content=produced)]
+    return output
 
 
 async def response_synthesizer_node(state: GraphState) -> dict:
     """
-    Temporary response synthesizer node that combines sub-agent results into a final message.
-    In the future, this will be integrated with a more advanced response synthesis agent.
+    Response synthesizer node that asks the LLM (Synthesizer) to combine the
+    sub-agent results into a final message.
     """
 
-    results = []
+    global llm
+
+    has_results = False
     for task in state.tasks:
         if task.result:
-            results.append(task.result)
+            has_results = True
+            break
 
-    if results:
-        final_text = '\n\n'.join(results)
-    else:
-        final_text = "I couldn't handle that request. Try asking for gas stations or food."
-
+    if not has_results:
+        message = "I couldn't handle that request. Try asking for gas stations or food."
+        return {'messages': [AIMessage(content=message)]}
+    
+    if llm is None:
+        llm = Llm()
+    
+    final_text = synthesizer(state, llm, False)
+    
+    if not isinstance(final_text, str):
+        final_text = str(final_text)
+    
     return {'messages': [AIMessage(content=final_text)]}
 
 
