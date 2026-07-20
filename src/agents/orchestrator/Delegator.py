@@ -45,15 +45,14 @@ Review the current user input against the conversation history and active tasks 
 ---
 You must respond strictly in JSON format. Return only task. Here is he form:
                                          
-{{ 
-    "tasks":[                                            
+{{
+    "tasks":[
     {{
         "id": "int",
-        "name": "string",
         "status": "in_progress",
         "assigned_agent": (one of the agent ids listed above),
-        "result": null,
-        "parameters: null
+        "query": "a concise, self-contained request for this sub-agent",
+        "result": null
     }}
     ]
 }}
@@ -86,9 +85,9 @@ class Delegator:
     def tasksToString(self,task: Task):
         taskDict = {
             'id': task.id,
-            'name': task.name,
             'status': task.status,
             'assigned_agent': task.assigned_agent,
+            'query': task.query,
             'result': task.result
         }
 

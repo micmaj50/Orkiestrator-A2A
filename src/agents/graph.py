@@ -49,11 +49,17 @@ async def orchestrator_node(state: GraphState) -> dict:
         agent = item.get('assigned_agent')
         if agent not in ROUTABLE_AGENTS:
             continue
+
+        try:
+            task_id = int(item.get('id'))
+        except (TypeError, ValueError):
+            task_id = index
+
         tasks.append(
             Task(
-                id=str(item.get('id') or f'{agent}-{index}'),
-                name=str(item.get('name') or agent),
+                id=task_id,
                 assigned_agent=agent,
+                query=item.get('query'),
             )
         )
 
@@ -73,14 +79,14 @@ def route_from_orchestrator(state: GraphState) -> str:
 async def gas_agent_node(state: GraphState) -> dict:
     """Gas sub-agent node: calls the gas station agent over A2A and records the result."""
 
-    user_text = str(state.user_input.content)
-
     updated_tasks: list[Task] = []
     produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
             try:
-                result = await call_sub_agent(user_text, GAS_AGENT_URL)
+                # Prefer the task-specific query; fall back to the full user input.
+                query = task.query or str(state.user_input.content)
+                result = await call_sub_agent(query, GAS_AGENT_URL)
 
                 task.status = TaskStatus.COMPLETED
                 task.result = result
@@ -105,14 +111,14 @@ async def gas_agent_node(state: GraphState) -> dict:
 async def food_agent_node(state: GraphState) -> dict:
     """Food sub-agent node: calls the food agent over A2A and records the result."""
 
-    user_text = str(state.user_input.content)
-
     updated_tasks: list[Task] = []
     produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
             try:
-                result = await call_sub_agent(user_text, FOOD_AGENT_URL)
+                # Prefer the task-specific query; fall back to the full user input.
+                query = task.query or str(state.user_input.content)
+                result = await call_sub_agent(query, FOOD_AGENT_URL)
 
                 task.status = TaskStatus.COMPLETED
                 task.result = result

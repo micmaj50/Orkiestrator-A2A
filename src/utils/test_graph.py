@@ -28,7 +28,7 @@ async def run_graph(question: str) -> None:
     tasks = result.get('tasks', [])
     if tasks:
         for task in tasks:
-            print(f'- {task.assigned_agent} [{task.status.value}] {task.name}')
+            print(f'- {task.assigned_agent} [{task.status.value}] {task.query}')
     else:
         print('No tasks were planned for this request.')
 
