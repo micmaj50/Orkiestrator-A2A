@@ -16,7 +16,7 @@ question_prompt = PromptTemplate.from_template("""
 You are the  Orchestrator running in a LangGraph workflow. Your job is to analyze user requests, manage the multi-agent execution state, and delegate tasks using the A2A (Agent2Agent) protocol.
 
 ---
-This is your Agent Card:
+These are the agents you can delegate to (keyed by their agent id):
 
 {AGENT_CARD}
 
@@ -51,7 +51,7 @@ You must respond strictly in JSON format. Return only task. Here is he form:
         "id": "int",
         "name": "string",
         "status": "in_progress",
-        "assigned_agent": (choose one agent from AgentCard),
+        "assigned_agent": (one of the agent ids listed above),
         "result": null,
         "parameters: null
     }}
@@ -65,20 +65,22 @@ You must respond strictly in JSON format. Return only task. Here is he form:
 
 
 class Delegator:
-    def __init__(self, Llm: Llm, AgentCard: AgentCard):
+    def __init__(self, Llm: Llm, AgentCards: dict[str, AgentCard]):
         self.Llm = Llm
-        self.AgentCard = AgentCard
+        self.AgentCards = AgentCards
 
 
-      #converts agentCard to string
+      #converts the agent cards to string, keyed by the agent id used for routing
     def cardToString(self):
-        dictCard= {
-            "name": self.AgentCard.name,
-            "description": self.AgentCard.description,
-            "version": self.AgentCard.version,
-            "skills": self.AgentCard.skills
+        cards = {}
+        for agent_id, card in self.AgentCards.items():
+            cards[agent_id] = {
+                "name": card.name,
+                "description": card.description,
+                "version": card.version,
+                "skills": card.skills
             }
-        return str(dictCard)
+        return str(cards)
     
     #converts Task to string
     def tasksToString(self,task: Task):
