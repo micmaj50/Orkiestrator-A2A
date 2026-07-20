@@ -1,44 +1,125 @@
+from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 
-from src.agents.state import GraphState, TaskStatus
+from agents.state import GraphState, Task, TaskStatus
+from utils.a2a_client import call_sub_agent
 
+
+GAS_AGENT_URL = 'http://127.0.0.1:9998'
+FOOD_AGENT_URL = 'http://127.0.0.1:9997'
+
+ROUTABLE_AGENTS = {'gas_agent', 'food_agent'}
 
 async def orchestrator_node(state: GraphState) -> dict:
-    """Orchestrator node that decides which sub-agent to call next based on the current state"""
+    """
+    Temporary orchestrator node that decides which sub-agent to call next based on the current state.
+    In the future, this will be integrated with a more advanced orchestrator agent.
+    """
 
-    # TODO: Implement logic to decide which sub-agent to call next based on the current state
+    if state.tasks:
+        return {}
 
-    return {}
+    user_text = str(state.user_input.content).lower()
+
+    tasks: list[Task] = []
+    if 'gas' in user_text:
+        tasks.append(
+            Task(
+                id='gas-1',
+                name='Find gas stations',
+                assigned_agent='gas_agent',
+            )
+        )
+    if 'food' in user_text:
+        tasks.append(
+            Task(
+                id='food-1',
+                name='Find restaurants',
+                assigned_agent='food_agent',
+            )
+        )
+
+    return {'tasks': tasks}
 
 
 def route_from_orchestrator(state: GraphState) -> str:
     """Route to the next agent based on the orchestrator's tasks list"""
     
     for task in state.tasks:
-        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent:
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent in ROUTABLE_AGENTS:
             return task.assigned_agent
         
     return 'response_synthesizer'
 
 
 async def gas_agent_node(state: GraphState) -> dict:
-    # TODO: Implement logic to call the Gas sub-agent and return its result
+    """Gas sub-agent node: calls the gas station agent over A2A and records the result."""
 
-    return {}
+    user_text = str(state.user_input.content)
+
+    updated_tasks: list[Task] = []
+    for task in state.tasks:
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
+            try:
+                result = await call_sub_agent(user_text, GAS_AGENT_URL)
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+                updated_tasks.append(task)
+
+            except Exception as exc:
+                task.status = TaskStatus.FAILED
+                task.result = f'Gas agent call failed: {exc}'
+                updated_tasks.append(task)
+
+        else:
+            updated_tasks.append(task)
+
+    return {'tasks': updated_tasks}
 
 
 async def food_agent_node(state: GraphState) -> dict:
-    # TODO: Implement logic to call the Food sub-agent and return its result
+    """Food sub-agent node: calls the food agent over A2A and records the result."""
 
-    return {}
+    user_text = str(state.user_input.content)
+
+    updated_tasks: list[Task] = []
+    for task in state.tasks:
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
+            try:
+                result = await call_sub_agent(user_text, FOOD_AGENT_URL)
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+                updated_tasks.append(task)
+
+            except Exception as exc:
+                task.status = TaskStatus.FAILED
+                task.result = f'Food agent call failed: {exc}'
+                updated_tasks.append(task)
+        else:
+            updated_tasks.append(task)
+
+    return {'tasks': updated_tasks}
 
 
 async def response_synthesizer_node(state: GraphState) -> dict:
-    """Response synthesizer node that combines results from sub-agents and generates a final response"""
+    """
+    Temporary response synthesizer node that combines sub-agent results into a final message.
+    In the future, this will be integrated with a more advanced response synthesis agent.
+    """
 
-    # TODO: Implement logic to synthesize results from sub-agents and generate a final response
+    results = []
+    for task in state.tasks:
+        if task.result:
+            results.append(task.result)
 
-    return {}
+    if results:
+        final_text = '\n\n'.join(results)
+    else:
+        final_text = "I couldn't handle that request. Try asking for gas stations or food."
+
+    return {'messages': [AIMessage(content=final_text)]}
 
 
 graph_builder = StateGraph(GraphState)
