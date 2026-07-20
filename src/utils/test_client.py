@@ -8,8 +8,9 @@ from a2a.helpers import new_text_message
 from a2a.types import Role, SendMessageRequest
 from utils.a2a_response import extract_artifact_text
 
+from config import get_orchestrator_url
 
-ORCHESTRATOR_URL = 'http://127.0.0.1:9999'
+ORCHESTRATOR_URL = get_orchestrator_url()
 
 
 async def send_message(text_query: str) -> None:

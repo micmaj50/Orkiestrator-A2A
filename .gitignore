@@ -59,6 +59,7 @@ coverage.xml
 cover/
 
 # --- IDEs and OS Files ---
-.vscode/
+.vscode/*
+!.vscode/tasks.json
 .DS_Store
 Thumbs.db
