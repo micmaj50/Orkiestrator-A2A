@@ -1,6 +1,6 @@
 from typing import Any
 
-from Llm import Llm
+from agents.orchestrator.Llm import Llm
 from langchain_core.prompts import PromptTemplate
 from agents.state import GraphState,Task
 from a2a.types import AgentCard
@@ -49,11 +49,11 @@ You must respond strictly in JSON format. Return only task. Here is he form:
     "tasks":[                                            
     {{
         "id": "int",
-        "name": "string",
+        "query": "string",
         "status": "in_progress",
         "assigned_agent": (choose one agent from AgentCard),
         "result": null,
-        "parameters: null
+        "parameters": null
     }}
     ]
 }}
@@ -65,26 +65,30 @@ You must respond strictly in JSON format. Return only task. Here is he form:
 
 
 class Delegator:
-    def __init__(self, Llm: Llm, AgentCard: AgentCard):
+    def __init__(self, Llm: Llm, AgentCards: dict[str, AgentCard]):
         self.Llm = Llm
-        self.AgentCard = AgentCard
+        self.AgentCards = AgentCards
 
 
       #converts agentCard to string
     def cardToString(self):
-        dictCard= {
-            "name": self.AgentCard.name,
-            "description": self.AgentCard.description,
-            "version": self.AgentCard.version,
-            "skills": self.AgentCard.skills
+        cards = []
+        for agent_key, card in self.AgentCards.items():
+            card_dict = {
+                "assigned_agent": agent_key,
+                "name": card.name,
+                "description": card.description,
+                "version": card.version,
+                "skills": card.skills,
             }
-        return str(dictCard)
+            cards.append(card_dict)
+        return str(cards)
     
     #converts Task to string
-    def tasksToString(self,task: Task):
+    def tasksToString(self, task: Task):
         taskDict = {
             'id': task.id,
-            'name': task.name,
+            'query': task.query,
             'status': task.status,
             'assigned_agent': task.assigned_agent,
             'result': task.result

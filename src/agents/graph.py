@@ -51,7 +51,7 @@ async def orchestrator_node(state: GraphState) -> dict:
             continue
 
         try:
-            task_id = int(item.get('id'))
+            task_id = item.get('id')
         except (TypeError, ValueError):
             task_id = index
 
