@@ -1,5 +1,6 @@
 from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.state import GraphState, Task, TaskStatus
 from agents.orchestrator.Llm import Llm
@@ -50,8 +51,9 @@ async def orchestrator_node(state: GraphState) -> dict:
         if agent not in ROUTABLE_AGENTS:
             continue
 
+        raw_id = item.get('id')
         try:
-            task_id = int(item.get('id'))
+            task_id = int(raw_id) if raw_id is not None else index
         except (TypeError, ValueError):
             task_id = index
 
@@ -76,10 +78,14 @@ def route_from_orchestrator(state: GraphState) -> str:
 
 
 async def gas_agent_node(state: GraphState) -> dict:
-    """Gas sub-agent node: calls the gas station agent over A2A and records the result."""
+    """Gas sub-agent node: calls the gas station agent over A2A and records the result.
+
+    The result is stored on the task (``task.result``); the conversation
+    ``messages`` log is intentionally left untouched so it only ever holds the
+    user's turns and the final synthesized answers (the cross-turn memory).
+    """
 
     updated_tasks: list[Task] = []
-    produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
             try:
@@ -93,23 +99,20 @@ async def gas_agent_node(state: GraphState) -> dict:
                 task.status = TaskStatus.FAILED
                 task.result = f'Gas agent call failed: {exc}'
 
-            produced = task.result
-            updated_tasks.append(task)
+        updated_tasks.append(task)
 
-        else:
-            updated_tasks.append(task)
-
-    output: dict = {'tasks': updated_tasks}
-    if produced:
-        output['messages'] = [AIMessage(content=produced)]
-    return output
+    return {'tasks': updated_tasks}
 
 
 async def food_agent_node(state: GraphState) -> dict:
-    """Food sub-agent node: calls the food agent over A2A and records the result."""
+    """Food sub-agent node: calls the food agent over A2A and records the result.
+
+    The result is stored on the task (``task.result``); the conversation
+    ``messages`` log is intentionally left untouched so it only ever holds the
+    user's turns and the final synthesized answers (the cross-turn memory).
+    """
 
     updated_tasks: list[Task] = []
-    produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
             try:
@@ -124,17 +127,9 @@ async def food_agent_node(state: GraphState) -> dict:
                 task.status = TaskStatus.FAILED
                 task.result = f'Food agent call failed: {exc}'
 
-            produced = task.result
-            updated_tasks.append(task)
+        updated_tasks.append(task)
 
-        else:
-            updated_tasks.append(task)
-
-    output: dict = {'tasks': updated_tasks}
-    if produced:
-        # Publish the result on messages so the synthesizer can read it.
-        output['messages'] = [AIMessage(content=produced)]
-    return output
+    return {'tasks': updated_tasks}
 
 
 async def response_synthesizer_node(state: GraphState) -> dict:
@@ -183,4 +178,8 @@ graph_builder.add_edge('gas_agent', 'orchestrator')
 graph_builder.add_edge('food_agent', 'orchestrator')
 graph_builder.add_edge('response_synthesizer', END)
 
-graph = graph_builder.compile()
+# An in-memory checkpointer persists graph state per thread (keyed by the A2A
+# context_id), turning the `messages` channel into a cross-turn conversation
+# memory that the orchestrator (Delegator) can read on later turns.
+checkpointer = InMemorySaver()
+graph = graph_builder.compile(checkpointer=checkpointer)

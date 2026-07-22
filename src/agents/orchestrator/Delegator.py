@@ -2,6 +2,7 @@ from typing import Any
 
 from agents.orchestrator.Llm import Llm
 from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import get_buffer_string
 from agents.state import GraphState,Task
 from a2a.types import AgentCard
 from a2a.types import (
@@ -98,12 +99,12 @@ class Delegator:
 
 
     #function that executes prompt
-    def invoke(self, state: GraphState,carData: Any) -> dict:
+    def invoke(self, state: GraphState,carData: Any) -> dict | str:
         agentCard = self.cardToString()
 
         inputs={
-            "USER_INPUT": state.user_input.content,                  
-            "CONVERSATION_STORY": state.messages,
+            "USER_INPUT": state.user_input.content,
+            "CONVERSATION_STORY": get_buffer_string(state.messages) if state.messages else "(no prior conversation)",
             "CAR_DATA": carData, #todo 
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
             "AGENT_CARD": agentCard                

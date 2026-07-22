@@ -1,5 +1,4 @@
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import get_buffer_string
 
 from agents.state import GraphState
 from agents.orchestrator.Llm import Llm
@@ -29,7 +28,13 @@ class Synthesizer:
         else:
             request = str(state.user_input.content)
 
-        answers = get_buffer_string(state.messages)
+        # Combine only the current turn's sub-agent results (kept on the tasks)
+        # rather than the whole `messages` history, which now spans past turns.
+        answers = "\n\n".join(
+            f"{task.assigned_agent or 'agent'}: {task.result}"
+            for task in state.tasks
+            if task.result
+        )
 
         final_response = llm(
             prompt=self.prompt_template,
