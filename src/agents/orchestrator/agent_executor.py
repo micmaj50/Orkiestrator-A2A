@@ -23,12 +23,25 @@ class Orchestrator:
     reply), and returns the final text answer.
     """
 
-    async def invoke(self, user_request: str) -> str:
-        state = GraphState(user_input=HumanMessage(content=user_request))
+    async def invoke(self, user_request: str, context_id: str | None = None) -> str:
+        human_message = HumanMessage(content=user_request)
+
+        # Per-turn input: refresh the active user input and reset the task list,
+        # while appending the new user turn to the accumulating `messages` history.
+        graph_input = {
+            'user_input': human_message,
+            'messages': [human_message],
+            'tasks': [],
+        }
+
+        # Key the checkpointed conversation memory by the A2A context id so that
+        # several messages in the same conversation share history. Without a
+        # context id we fall back to a single shared thread.
+        config = {'configurable': {'thread_id': context_id or 'default'}}
 
         # graph.ainvoke returns the final state as a dict-like mapping
         # (channel name -> value) for a pydantic state schema.
-        result = await graph.ainvoke(state)
+        result = await graph.ainvoke(graph_input, config=config)
 
         if isinstance(result, GraphState):
             messages = result.messages
@@ -79,7 +92,10 @@ class OrchestratorExecutor(AgentExecutor):
         # 3. Extract the user's text and pass it to the orchestrator graph
         query = get_message_text(context.message)
         if query:
-            result = await self.agent.invoke(user_request=query)
+            result = await self.agent.invoke(
+                user_request=query,
+                context_id=task.context_id,
+            )
         else:
             result = 'No text input is provided!'
 
