@@ -1,7 +1,5 @@
+from langchain_core.messages import HumanMessage
 
-import httpx
-
-from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.helpers import (
     get_message_text,
     new_task_from_user_message,
@@ -11,97 +9,42 @@ from a2a.helpers import (
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Role, SendMessageRequest, TaskState
-from utils.a2a_response import extract_artifact_text
+from a2a.types import TaskState
 
-from config import get_food_agent_url, get_gas_agent_url
+from agents.graph import graph
+from agents.state import GraphState
 
-GAS_AGENT_URL  = get_gas_agent_url()
-FOOD_AGENT_URL = get_food_agent_url()
 
 class Orchestrator:
-    """Simple orchestrator"""
+    """Orchestrator backed by the LangGraph multi-agent graph.
+
+    Builds the initial graph state from the user's request, runs the graph
+    (which delegates to the gas/food sub-agents over A2A and synthesizes a
+    reply), and returns the final text answer.
+    """
 
     async def invoke(self, user_request: str) -> str:
-        question = user_request.lower()
+        state = GraphState(user_input=HumanMessage(content=user_request))
 
-        if 'gas' in question:
-            gas_result = await self._call_sub_agent(user_request, GAS_AGENT_URL)
-            return self._format_result(gas_result)
+        # graph.ainvoke returns the final state as a dict-like mapping
+        # (channel name -> value) for a pydantic state schema.
+        result = await graph.ainvoke(state)
 
-        if 'food' in question:
-            food_result = await self._call_sub_agent(user_request, FOOD_AGENT_URL)
-            return self._format_result(food_result)
+        if isinstance(result, GraphState):
+            messages = result.messages
+        else:
+            messages = result.get('messages', [])
 
-        return(
-                'Unsupported request '
-                'Try: "find closest gas stations"'
-                'Or:  "find closest food points"'
-                )
+        if messages:
+            final_message = messages[-1]
+            return str(getattr(final_message, 'content', final_message))
 
-    async def _call_sub_agent(self, user_request: str, agent_url: str) -> str:
-        """Send a request to a sub-agent and return its text response"""
+        return 'The orchestrator did not produce a response.'
 
-        # Resolve the agent card to discover its A2A interface and capabilities
-        async with httpx.AsyncClient() as httpx_client:
-            resolver = A2ACardResolver(
-                    httpx_client=httpx_client,
-                    base_url=agent_url,
-                    )
-            sub_agent_card = await resolver.get_agent_card()
-
-        # Create an A2A client from the card using the default client configuration
-        client_config = ClientConfig(streaming=False)
-        client = await create_client(
-                agent=sub_agent_card,
-                client_config=client_config,
-                )
-
-        try:
-            # Build and send the request as an A2A user message
-            message = new_text_message(
-                    user_request,
-                    role=Role.ROLE_USER,
-                    )
-            request = SendMessageRequest(message=message)
-
-            extracted_texts: list[str] = []
-            # Iterate over the response chunks and extract text from each
-            async for chunk in client.send_message(request):
-                text = extract_artifact_text(chunk)
-                if text:
-                    extracted_texts.append(text)
-
-            if not extracted_texts:
-                return ''
-
-            return extracted_texts[-1]
-
-        finally:
-            await client.close()
-
-    def _format_result(self, agent_result: str) -> str:
-        """Format text extracted from the sub agent result for the orchestrator response"""
-
-        if not agent_result:
-            return 'Sub-agent returned no stations'
-
-        locations = [
-                location.strip()
-                for location in agent_result.replace('\n', ',').split(',')
-                if location.strip()
-                ]
-
-        if not locations:
-            return 'Sub-agent returned no stations'
-
-        locations_lines = '\n'.join(f'- {location}' for location in locations)
-
-        return f'Closest locations:\n{locations_lines}'
 
 class OrchestratorExecutor(AgentExecutor):
     """A2A executor for the orchestrator"""
-    
+
     def __init__(self) -> None:
         self.agent = Orchestrator()
 
@@ -122,8 +65,8 @@ class OrchestratorExecutor(AgentExecutor):
 
         # 2. Mark the task as working in EventQueue before invoking the orchestrator logic
         task_updater = TaskUpdater(
-            event_queue=event_queue, 
-            task_id=task.id, 
+            event_queue=event_queue,
+            task_id=task.id,
             context_id=task.context_id
         )
 
@@ -133,7 +76,7 @@ class OrchestratorExecutor(AgentExecutor):
         )
 
 
-        # 3. Extract the user's text and pass it to the orchestrator
+        # 3. Extract the user's text and pass it to the orchestrator graph
         query = get_message_text(context.message)
         if query:
             result = await self.agent.invoke(user_request=query)
@@ -144,7 +87,7 @@ class OrchestratorExecutor(AgentExecutor):
         await task_updater.add_artifact(
                 parts=[
                     new_text_part(
-                        text=result, 
+                        text=result,
                         media_type='text/plain'
                         )
                     ]
