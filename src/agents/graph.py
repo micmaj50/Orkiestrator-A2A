@@ -51,8 +51,9 @@ async def orchestrator_node(state: GraphState) -> dict:
         if agent not in ROUTABLE_AGENTS:
             continue
 
+        raw_id = item.get('id')
         try:
-            task_id = int(item.get('id'))
+            task_id = int(raw_id) if raw_id is not None else index
         except (TypeError, ValueError):
             task_id = index
 

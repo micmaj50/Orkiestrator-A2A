@@ -99,7 +99,7 @@ class Delegator:
 
 
     #function that executes prompt
-    def invoke(self, state: GraphState,carData: Any) -> dict:
+    def invoke(self, state: GraphState,carData: Any) -> dict | str:
         agentCard = self.cardToString()
 
         inputs={

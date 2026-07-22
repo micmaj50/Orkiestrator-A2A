@@ -1,4 +1,5 @@
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 from a2a.helpers import (
     get_message_text,
@@ -28,16 +29,19 @@ class Orchestrator:
 
         # Per-turn input: refresh the active user input and reset the task list,
         # while appending the new user turn to the accumulating `messages` history.
-        graph_input = {
-            'user_input': human_message,
-            'messages': [human_message],
-            'tasks': [],
-        }
+        # A GraphState instance (vs a plain dict) keeps this type-checked; with a
+        # checkpointer LangGraph still applies each field through its channel
+        # reducer, so `messages` appends and `tasks` is overwritten (reset).
+        graph_input = GraphState(
+            user_input=human_message,
+            messages=[human_message],
+            tasks=[],
+        )
 
         # Key the checkpointed conversation memory by the A2A context id so that
         # several messages in the same conversation share history. Without a
         # context id we fall back to a single shared thread.
-        config = {'configurable': {'thread_id': context_id or 'default'}}
+        config: RunnableConfig = {'configurable': {'thread_id': context_id or 'default'}}
 
         # graph.ainvoke returns the final state as a dict-like mapping
         # (channel name -> value) for a pydantic state schema.
@@ -71,9 +75,11 @@ class OrchestratorExecutor(AgentExecutor):
         # 1. Reuse the current task or create one for a new request
         if context.current_task:
             task = context.current_task
-        else:
+        elif context.message is not None:
             task = new_task_from_user_message(context.message)
             await event_queue.enqueue_event(task)
+        else:
+            raise ValueError('No message to process and no current task to resume.')
 
 
         # 2. Mark the task as working in EventQueue before invoking the orchestrator logic
@@ -90,7 +96,7 @@ class OrchestratorExecutor(AgentExecutor):
 
 
         # 3. Extract the user's text and pass it to the orchestrator graph
-        query = get_message_text(context.message)
+        query = get_message_text(context.message) if context.message is not None else ''
         if query:
             result = await self.agent.invoke(
                 user_request=query,
