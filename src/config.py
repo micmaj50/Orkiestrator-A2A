@@ -12,6 +12,9 @@ DEFAULT_GAS_AGENT_PORT = 9998
 DEFAULT_FOOD_AGENT_HOST = "127.0.0.1"
 DEFAULT_FOOD_AGENT_PORT = 9997
 
+DEFAULT_PARKING_AGENT_HOST = "127.0.0.1"
+DEFAULT_PARKING_AGENT_PORT = 9996
+
 
 def get_bind_host() -> str:
     return os.getenv("A2A_BIND_HOST", DEFAULT_BIND_HOST)
@@ -61,4 +64,20 @@ def get_food_agent_url() -> str:
     return (
             f"http://{get_food_agent_host()}:"
             f"{get_food_agent_port()}"
+    )
+
+
+
+def get_parking_agent_host() -> str:
+    return os.getenv("PARKING_AGENT_HOST", DEFAULT_PARKING_AGENT_HOST)
+
+
+def get_parking_agent_port() -> int:
+    return int(os.getenv("PARKING_AGENT_PORT", str(DEFAULT_PARKING_AGENT_PORT)))
+
+
+def get_parking_agent_url() -> str:
+    return (
+            f"http://{get_parking_agent_host()}:"
+            f"{get_parking_agent_port()}"
     )
