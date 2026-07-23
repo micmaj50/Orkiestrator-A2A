@@ -1,6 +1,5 @@
 from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.state import GraphState, Task, TaskStatus
 from agents.orchestrator.Llm import Llm
@@ -8,14 +7,16 @@ from agents.orchestrator.Delegator import Delegator
 from agents.synthesizer import Synthesizer
 from agents.gas_agent import agent_card as gas_agent_card
 from agents.food_agent import agent_card as food_agent_card
+from agents.parking_agent import agent_card as parking_agent_card
 from utils.a2a_client import call_sub_agent
 
-from config import get_food_agent_url, get_gas_agent_url
+from config import get_food_agent_url, get_gas_agent_url, get_parking_agent_url
 
 
 SUB_AGENT_CARDS = {
     'gas_agent': gas_agent_card,
     'food_agent': food_agent_card,
+    'parking_agent': parking_agent_card,
 }
 ROUTABLE_AGENTS = set(SUB_AGENT_CARDS)
 
@@ -51,9 +52,8 @@ async def orchestrator_node(state: GraphState) -> dict:
         if agent not in ROUTABLE_AGENTS:
             continue
 
-        raw_id = item.get('id')
         try:
-            task_id = int(raw_id) if raw_id is not None else index
+            task_id = int(item.get('id'))
         except (TypeError, ValueError):
             task_id = index
 
@@ -78,14 +78,10 @@ def route_from_orchestrator(state: GraphState) -> str:
 
 
 async def gas_agent_node(state: GraphState) -> dict:
-    """
-    Gas sub-agent node: calls the gas station agent over A2A and records the result.
-
-    The result is stored on the task (`task.result`).
-    The conversation `messages` is only ever holds the user's turns and the final synthesized answers.
-    """
+    """Gas sub-agent node: calls the gas station agent over A2A and records the result."""
 
     updated_tasks: list[Task] = []
+    produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'gas_agent':
             try:
@@ -99,20 +95,23 @@ async def gas_agent_node(state: GraphState) -> dict:
                 task.status = TaskStatus.FAILED
                 task.result = f'Gas agent call failed: {exc}'
 
-        updated_tasks.append(task)
+            produced = task.result
+            updated_tasks.append(task)
 
-    return {'tasks': updated_tasks}
+        else:
+            updated_tasks.append(task)
+
+    output: dict = {'tasks': updated_tasks}
+    if produced:
+        output['messages'] = [AIMessage(content=produced)]
+    return output
 
 
 async def food_agent_node(state: GraphState) -> dict:
-    """
-    Food sub-agent node: calls the food agent over A2A and records the result.
-    
-    The result is stored on the task (`task.result`).
-    The conversation `messages` is only ever holds the user's turns and the final synthesized answers.
-    """
+    """Food sub-agent node: calls the food agent over A2A and records the result."""
 
     updated_tasks: list[Task] = []
+    produced: str | None = None
     for task in state.tasks:
         if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'food_agent':
             try:
@@ -126,6 +125,42 @@ async def food_agent_node(state: GraphState) -> dict:
             except Exception as exc:
                 task.status = TaskStatus.FAILED
                 task.result = f'Food agent call failed: {exc}'
+
+            produced = task.result
+            updated_tasks.append(task)
+
+        else:
+            updated_tasks.append(task)
+
+    output: dict = {'tasks': updated_tasks}
+    if produced:
+        # Publish the result on messages so the synthesizer can read it.
+        output['messages'] = [AIMessage(content=produced)]
+    return output
+
+
+async def parking_agent_node(state: GraphState) -> dict:
+    """Parking sub-agent node: calls the parking agent over A2A and records the result.
+
+    The result is stored on the task (``task.result``); the conversation
+    ``messages`` log is intentionally left untouched so it only ever holds the
+    user's turns and the final synthesized answers (the cross-turn memory).
+    """
+
+    updated_tasks: list[Task] = []
+    for task in state.tasks:
+        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent == 'parking_agent':
+            try:
+                # Prefer the task-specific query; fall back to the full user input.
+                query = task.query or str(state.user_input.content)
+                result = await call_sub_agent(query, get_parking_agent_url())
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+
+            except Exception as exc:
+                task.status = TaskStatus.FAILED
+                task.result = f'Parking agent call failed: {exc}'
 
         updated_tasks.append(task)
 
@@ -147,7 +182,7 @@ async def response_synthesizer_node(state: GraphState) -> dict:
             break
 
     if not has_results:
-        message = "I couldn't handle that request. Try asking for gas stations or food."
+        message = "I couldn't handle that request. Try asking for gas stations, food, or parking."
         return {'messages': [AIMessage(content=message)]}
     
     if llm is None:
@@ -166,16 +201,19 @@ graph_builder = StateGraph(GraphState)
 graph_builder.add_node('orchestrator', orchestrator_node)
 graph_builder.add_node('gas_agent', gas_agent_node)
 graph_builder.add_node('food_agent', food_agent_node)
+graph_builder.add_node('parking_agent', parking_agent_node)
 graph_builder.add_node('response_synthesizer', response_synthesizer_node)
 
 graph_builder.add_edge(START, 'orchestrator')
 graph_builder.add_conditional_edges('orchestrator', route_from_orchestrator, {
     'gas_agent': 'gas_agent',
     'food_agent': 'food_agent',
+    'parking_agent': 'parking_agent',
     'response_synthesizer': 'response_synthesizer'
 })
 graph_builder.add_edge('gas_agent', 'orchestrator')
 graph_builder.add_edge('food_agent', 'orchestrator')
+graph_builder.add_edge('parking_agent', 'orchestrator')
 graph_builder.add_edge('response_synthesizer', END)
 
-graph = graph_builder.compile(checkpointer=InMemorySaver())
+graph = graph_builder.compile()
