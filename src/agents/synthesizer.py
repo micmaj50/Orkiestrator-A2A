@@ -28,13 +28,19 @@ class Synthesizer:
         else:
             request = str(state.user_input.content)
 
-        # Combine only the current turn's sub-agent results (kept on the tasks)
-        # rather than the whole `messages` history, which now spans past turns.
-        answers = "\n\n".join(
-            f"{task.assigned_agent or 'agent'}: {task.result}"
-            for task in state.tasks
-            if task.result
-        )
+
+        # Combine only the current turn's sub-agent results
+        # rather than the whole `messages` history
+        answer_parts = []
+        for task in state.tasks:
+            if task.result:
+                if task.assigned_agent:
+                    agent_name = task.assigned_agent
+                else:
+                    agent_name = 'agent'
+                answer_parts.append(f"{agent_name}: {task.result}")
+
+        answers = "\n\n".join(answer_parts)
 
         final_response = llm(
             prompt=self.prompt_template,

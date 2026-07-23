@@ -17,30 +17,21 @@ from agents.state import GraphState
 
 
 class Orchestrator:
-    """Orchestrator backed by the LangGraph multi-agent graph.
-
-    Builds the initial graph state from the user's request, runs the graph
-    (which delegates to the gas/food sub-agents over A2A and synthesizes a
-    reply), and returns the final text answer.
+    """
+    Orchestrator backed by the LangGraph multi-agent graph.
+    
+    Builds the initial graph state from the user's request, runs the graph and returns the final text answer.
     """
 
     async def invoke(self, user_request: str, context_id: str | None = None) -> str:
         human_message = HumanMessage(content=user_request)
 
-        # Per-turn input: refresh the active user input and reset the task list,
-        # while appending the new user turn to the accumulating `messages` history.
-        # A GraphState instance (vs a plain dict) keeps this type-checked; with a
-        # checkpointer LangGraph still applies each field through its channel
-        # reducer, so `messages` appends and `tasks` is overwritten (reset).
         graph_input = GraphState(
             user_input=human_message,
             messages=[human_message],
             tasks=[],
         )
 
-        # Key the checkpointed conversation memory by the A2A context id so that
-        # several messages in the same conversation share history. Without a
-        # context id we fall back to a single shared thread.
         config: RunnableConfig = {'configurable': {'thread_id': context_id or 'default'}}
 
         # graph.ainvoke returns the final state as a dict-like mapping
@@ -58,10 +49,9 @@ class Orchestrator:
 
         return 'The orchestrator did not produce a response.'
 
-
 class OrchestratorExecutor(AgentExecutor):
     """A2A executor for the orchestrator"""
-
+    
     def __init__(self) -> None:
         self.agent = Orchestrator()
 

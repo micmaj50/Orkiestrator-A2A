@@ -78,11 +78,11 @@ def route_from_orchestrator(state: GraphState) -> str:
 
 
 async def gas_agent_node(state: GraphState) -> dict:
-    """Gas sub-agent node: calls the gas station agent over A2A and records the result.
+    """
+    Gas sub-agent node: calls the gas station agent over A2A and records the result.
 
-    The result is stored on the task (``task.result``); the conversation
-    ``messages`` log is intentionally left untouched so it only ever holds the
-    user's turns and the final synthesized answers (the cross-turn memory).
+    The result is stored on the task (`task.result`).
+    The conversation `messages` is only ever holds the user's turns and the final synthesized answers.
     """
 
     updated_tasks: list[Task] = []
@@ -105,11 +105,11 @@ async def gas_agent_node(state: GraphState) -> dict:
 
 
 async def food_agent_node(state: GraphState) -> dict:
-    """Food sub-agent node: calls the food agent over A2A and records the result.
-
-    The result is stored on the task (``task.result``); the conversation
-    ``messages`` log is intentionally left untouched so it only ever holds the
-    user's turns and the final synthesized answers (the cross-turn memory).
+    """
+    Food sub-agent node: calls the food agent over A2A and records the result.
+    
+    The result is stored on the task (`task.result`).
+    The conversation `messages` is only ever holds the user's turns and the final synthesized answers.
     """
 
     updated_tasks: list[Task] = []
@@ -178,8 +178,4 @@ graph_builder.add_edge('gas_agent', 'orchestrator')
 graph_builder.add_edge('food_agent', 'orchestrator')
 graph_builder.add_edge('response_synthesizer', END)
 
-# An in-memory checkpointer persists graph state per thread (keyed by the A2A
-# context_id), turning the `messages` channel into a cross-turn conversation
-# memory that the orchestrator (Delegator) can read on later turns.
-checkpointer = InMemorySaver()
-graph = graph_builder.compile(checkpointer=checkpointer)
+graph = graph_builder.compile(checkpointer=InMemorySaver())

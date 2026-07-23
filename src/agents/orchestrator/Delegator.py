@@ -107,7 +107,6 @@ class Delegator:
             "CONVERSATION_STORY": get_buffer_string(state.messages) if state.messages else "(no prior conversation)",
             "CAR_DATA": carData, #todo 
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
-            "AGENT_CARD": agentCard                
+            "AGENT_CARD": agentCard
         }
         return self.Llm(question_prompt,inputs,True)
-        
