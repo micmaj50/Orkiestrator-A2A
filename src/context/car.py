@@ -22,6 +22,7 @@ class VehicleProfile(ConfiguredBaseModel):
     """
 
     fuel_type: FuelType
+    tank_capacity: float = Field(ge=0)
 
 
 class VehicleTelemetry(ConfiguredBaseModel):
@@ -37,7 +38,7 @@ class VehicleTelemetry(ConfiguredBaseModel):
     """
     current_location: Coordinates
     remaining_range_km: float | None = Field(default=None, ge=0)
-    # observed_at: datetime
+    observed_at: datetime
 
 
 class CarContext(ConfiguredBaseModel):
