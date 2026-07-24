@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
@@ -15,6 +17,30 @@ from a2a.types import TaskState
 from agents.graph import graph
 from agents.state import GraphState
 
+from common.fuel import FuelType
+from common.location import Coordinates
+from context.car import CarContext, VehicleProfile, VehicleTelemetry
+
+
+def build_default_car_context() -> CarContext:
+    """Build the vehicle context seeded into the graph state.
+    TODO: Replace this mock with a real vehicle telemetry source (GPS, fuel
+    sensors, ...). For now it provides deterministic data so the orchestrator
+    and sub-agents can be exercised end to end.
+    """
+    return CarContext(
+        profile=VehicleProfile(
+            fuel_type=FuelType.PETROL_95,
+            tank_capacity=50.0,
+        ),
+        telemetry=VehicleTelemetry(
+            # Warsaw city center, matching the fallback previously hard-coded in the agents.
+            current_location=Coordinates(latitude=52.2297, longitude=21.0122),
+            remaining_range_km=120.0,
+            observed_at=datetime.now(timezone.utc),
+        ),
+    )
+
 
 class Orchestrator:
     """
@@ -30,6 +56,7 @@ class Orchestrator:
             user_input=human_message,
             messages=[human_message],
             tasks=[],
+            car=build_default_car_context(),
         )
 
         config: RunnableConfig = {'configurable': {'thread_id': context_id or 'default'}}

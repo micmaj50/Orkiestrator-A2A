@@ -105,7 +105,7 @@ class Delegator:
         inputs={
             "USER_INPUT": state.user_input.content,
             "CONVERSATION_STORY": get_buffer_string(state.messages) if state.messages else "(no prior conversation)",
-            "CAR_DATA": carData, #todo 
+            "CAR_DATA": carData if carData is not None else "(no car data available)",
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
             "AGENT_CARD": agentCard
         }
