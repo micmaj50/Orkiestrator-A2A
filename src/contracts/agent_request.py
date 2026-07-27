@@ -1,22 +1,26 @@
+from enum import StrEnum
 from operator import attrgetter
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from datetime import datetime
 
-from common.fuel import FuelType
 from common.location import Coordinates
 from common.model_config import ConfiguredBaseModel
 from context.car import CarContext
-from context.context_selection import ContextSelection
+
+
+class ContextKey(StrEnum):
+    # if we ever add SystemContext class with a `car` field inside it, the path must start with `car`
+    # currently, our AgentRequest and resolver accept `CarContex`
+    CURRENT_LOCATION = "telemetry.current_location"
+
+
+class ContextSelection(ConfiguredBaseModel):
+    fields: list[ContextKey] = Field(default_factory=list)
 
 
 class AgentContext(ConfiguredBaseModel):
-    fuel_type: FuelType | None = None
-    tank_capacity: float | None = Field(default=None, ge=0)
     current_location: Coordinates | None = None
-    remaining_range_km: float | None = Field(default=None, ge=0)
-    observed_at: datetime | None = None
 
 
 def resolve_agent_context(
@@ -35,8 +39,6 @@ def resolve_agent_context(
 
 
 class AgentRequest(ConfiguredBaseModel):
-    """Class that will be mosty used when LLM is implemented for determaining the needed context"""
-
     """Work delegated by the orchestrator to a sub-agent
     `user_query` preserves the original input. (TODO: does a sub-agent need to know about it?)
 
@@ -53,3 +55,22 @@ class AgentRequest(ConfiguredBaseModel):
     task: str
     
     context: AgentContext = Field(default_factory=AgentContext)
+
+# def serialize_agent_input - ?
+# create seelction, run the resolver, contstruct a request, contruct a payload, print it
+# the test below is probably outdated, I'm not sure
+
+# Test
+# llm_output = {
+#         "task": "Find restaurants near the car",
+#         "required_context": [
+#             "car.telemetry.current_location"
+#             ],
+#         }
+#
+# request = AgentRequest(
+#         user_query="test"
+#         task="test"
+#         context=resolve_agent_context()
+#         )
+#

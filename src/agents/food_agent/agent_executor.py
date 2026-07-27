@@ -15,8 +15,6 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
 
-from utils.a2a_context import extract_coordinates
-
 load_dotenv()
 
 
@@ -222,9 +220,10 @@ class FoodAgentExecutor(AgentExecutor):
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
         
-        # Read the car's live location from the structured context the
-        # orchestrator attached; fall back to Warsaw center if absent.
-        car_lat, car_lng = extract_coordinates(context.message, 52.2297, 21.0122)
+        # Change this if the Orchestrator sends car GPS in a different field.
+        # Currently defaults to Warsaw Center coordinates as a fallback mock.
+        car_lat = getattr(context, 'car_lat', 52.2297)
+        car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
             result = await self.agent.invoke(user_request=query, car_lat=car_lat, car_lng=car_lng)

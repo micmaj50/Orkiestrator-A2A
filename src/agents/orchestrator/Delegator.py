@@ -1,8 +1,7 @@
 from typing import Any
 
-from agents.orchestrator.Llm import Llm
+from Llm import Llm
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import get_buffer_string
 from agents.state import GraphState,Task
 from a2a.types import AgentCard
 from a2a.types import (
@@ -50,11 +49,11 @@ You must respond strictly in JSON format. Return only task. Here is he form:
     "tasks":[                                            
     {{
         "id": "int",
-        "query": "string",
+        "name": "string",
         "status": "in_progress",
         "assigned_agent": (choose one agent from AgentCard),
         "result": null,
-        "parameters": null
+        "parameters: null
     }}
     ]
 }}
@@ -66,30 +65,26 @@ You must respond strictly in JSON format. Return only task. Here is he form:
 
 
 class Delegator:
-    def __init__(self, Llm: Llm, AgentCards: dict[str, AgentCard]):
+    def __init__(self, Llm: Llm, AgentCard: AgentCard):
         self.Llm = Llm
-        self.AgentCards = AgentCards
+        self.AgentCard = AgentCard
 
 
       #converts agentCard to string
     def cardToString(self):
-        cards = []
-        for agent_key, card in self.AgentCards.items():
-            card_dict = {
-                "assigned_agent": agent_key,
-                "name": card.name,
-                "description": card.description,
-                "version": card.version,
-                "skills": card.skills,
+        dictCard= {
+            "name": self.AgentCard.name,
+            "description": self.AgentCard.description,
+            "version": self.AgentCard.version,
+            "skills": self.AgentCard.skills
             }
-            cards.append(card_dict)
-        return str(cards)
+        return str(dictCard)
     
     #converts Task to string
-    def tasksToString(self, task: Task):
+    def tasksToString(self,task: Task):
         taskDict = {
             'id': task.id,
-            'query': task.query,
+            'name': task.name,
             'status': task.status,
             'assigned_agent': task.assigned_agent,
             'result': task.result
@@ -99,14 +94,15 @@ class Delegator:
 
 
     #function that executes prompt
-    def invoke(self, state: GraphState,carData: Any) -> dict | str:
+    def invoke(self, state: GraphState,carData: Any) -> dict:
         agentCard = self.cardToString()
 
         inputs={
-            "USER_INPUT": state.user_input.content,
-            "CONVERSATION_STORY": get_buffer_string(state.messages) if state.messages else "(no prior conversation)",
-            "CAR_DATA": carData if carData is not None else "(no car data available)",
+            "USER_INPUT": state.user_input.content,                  
+            "CONVERSATION_STORY": state.messages,
+            "CAR_DATA": carData, #todo 
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
-            "AGENT_CARD": agentCard
+            "AGENT_CARD": agentCard                
         }
         return self.Llm(question_prompt,inputs,True)
+        

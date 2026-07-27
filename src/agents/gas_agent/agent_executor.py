@@ -15,8 +15,6 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
 
-from utils.a2a_context import extract_coordinates
-
 load_dotenv()
 
 
@@ -201,11 +199,9 @@ class GasStationAgentExecutor(AgentExecutor):
 
         if context.current_task:
             task = context.current_task
-        elif context.message is not None:
+        else:
             task = new_task_from_user_message(context.message)
             await event_queue.enqueue_event(task)
-        else:
-            raise ValueError('No message to process and no current task to resume.')
 
         task_updater = TaskUpdater(
             event_queue=event_queue, 
@@ -217,11 +213,10 @@ class GasStationAgentExecutor(AgentExecutor):
             message=new_text_message('Processing gas station search request...'),
         )
 
-        query = get_message_text(context.message) if context.message is not None else ''
+        query = get_message_text(context.message)
         
-        # Read the car's live location from the structured context the
-        # orchestrator attached; fall back to Warsaw center if absent.
-        car_lat, car_lng = extract_coordinates(context.message, 52.2297, 21.0122)
+        car_lat = getattr(context, 'car_lat', 52.2297)
+        car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
             result = await self.agent.invoke(user_request=query, car_lat=car_lat, car_lng=car_lng)
