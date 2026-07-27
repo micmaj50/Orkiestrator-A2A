@@ -15,6 +15,9 @@ DEFAULT_FOOD_AGENT_PORT = 9997
 DEFAULT_PARKING_AGENT_HOST = "127.0.0.1"
 DEFAULT_PARKING_AGENT_PORT = 9996
 
+DEFAULT_WEATHER_AGENT_HOST = "127.0.0.1"
+DEFAULT_WEATHER_AGENT_PORT = 9995
+
 
 def get_bind_host() -> str:
     return os.getenv("A2A_BIND_HOST", DEFAULT_BIND_HOST)
@@ -80,4 +83,20 @@ def get_parking_agent_url() -> str:
     return (
             f"http://{get_parking_agent_host()}:"
             f"{get_parking_agent_port()}"
+    )
+
+
+
+def get_weather_agent_host() -> str:
+    return os.getenv("WEATHER_AGENT_HOST", DEFAULT_WEATHER_AGENT_HOST)
+
+
+def get_weather_agent_port() -> int:
+    return int(os.getenv("WEATHER_AGENT_PORT", str(DEFAULT_WEATHER_AGENT_PORT)))
+
+
+def get_weather_agent_url() -> str:
+    return (
+            f"http://{get_weather_agent_host()}:"
+            f"{get_weather_agent_port()}"
     )

@@ -13,11 +13,13 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Role, SendMessageRequest, TaskState
 from utils.a2a_response import extract_artifact_text
 
-from config import get_food_agent_url, get_gas_agent_url, get_parking_agent_url
+from config import get_food_agent_url, get_gas_agent_url, get_parking_agent_url, get_weather_agent_url
 
 GAS_AGENT_URL  = get_gas_agent_url()
 FOOD_AGENT_URL = get_food_agent_url()
 PARKING_AGENT_URL = get_parking_agent_url()
+WEATHER_AGENT_URL = get_weather_agent_url()
+
 
 class Orchestrator:
     """Simple orchestrator"""
@@ -36,6 +38,9 @@ class Orchestrator:
         if 'parking' in question:
             parking_result = await self._call_sub_agent(user_request, PARKING_AGENT_URL)
             return self._format_result(parking_result)
+
+        if 'weather' in question:
+            return await self._call_sub_agent(user_request, WEATHER_AGENT_URL)
 
         return(
                 'Unsupported request\n'

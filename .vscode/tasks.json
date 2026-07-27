@@ -86,6 +86,27 @@
             }
         },
         {
+            "label": "Run weather agent",
+            "type": "process",
+            "command": "uv",
+            "args": [
+                "run",
+                "--env-file",
+                ".env",
+                "python",
+                "-m",
+                "agents.weather_agent"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "Run test client",
             "type": "process",
             "command": "uv",

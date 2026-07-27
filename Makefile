@@ -1,7 +1,7 @@
 ENV_FILE ?= .env
 UV_RUN := uv run --env-file $(ENV_FILE)
 
-.PHONY: run-orchestrator run-gas-agent run-food-agent run-parking-agent run-client
+.PHONY: run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client
 
 run-orchestrator:
 	$(UV_RUN) python -m agents.orchestrator
@@ -14,6 +14,9 @@ run-food-agent:
 
 run-parking-agent:
 	$(UV_RUN) python -m agents.parking_agent
+
+run-weather-agent:
+	$(UV_RUN) python -m agents.weather_agent
 
 run-client:
 	$(UV_RUN) python src/utils/test_client.py
