@@ -1,3 +1,4 @@
+
 import httpx
 
 from a2a.client import A2ACardResolver, ClientConfig, create_client
@@ -13,11 +14,11 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Role, SendMessageRequest, TaskState
 from utils.a2a_response import extract_artifact_text
 
-from config import get_food_agent_url, get_gas_agent_url, get_parking_agent_url
+from config import get_food_agent_url, get_gas_agent_url, get_weather_agent_url
 
 GAS_AGENT_URL  = get_gas_agent_url()
 FOOD_AGENT_URL = get_food_agent_url()
-PARKING_AGENT_URL = get_parking_agent_url()
+WEATHER_AGENT_URL = get_weather_agent_url()
 
 class Orchestrator:
     """Simple orchestrator"""
@@ -32,16 +33,14 @@ class Orchestrator:
         if 'food' in question:
             food_result = await self._call_sub_agent(user_request, FOOD_AGENT_URL)
             return self._format_result(food_result)
-        
-        if 'parking' in question:
-            parking_result = await self._call_sub_agent(user_request, PARKING_AGENT_URL)
-            return self._format_result(parking_result)
+
+        if 'weather' in question:
+            return await self._call_sub_agent(user_request, WEATHER_AGENT_URL)
 
         return(
-                'Unsupported request\n'
-                'Try: "find closest gas stations"\n'
-                'Or:  "find closest food points"\n'
-                'Or:  "find parking nearby"'
+                'Unsupported request '
+                'Try: "find closest gas stations"'
+                'Or:  "find closest food points"'
                 )
 
     async def _call_sub_agent(self, user_request: str, agent_url: str) -> str:
