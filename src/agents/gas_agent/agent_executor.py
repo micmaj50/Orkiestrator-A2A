@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 import httpx
@@ -43,6 +43,14 @@ class GasSearchParams(BaseModel):
             "to integer meters (10000). Default to 3000 if not specified by the driver."
         )
     )
+    provider: Literal["google", "here"] = Field(
+        default="google",
+        description=(
+            "The API provider to use for the search. "
+            "If the driver specifically mentions 'here', 'here api' or 'here maps', set to 'here'. "
+            "Otherwise, ALWAYS default to 'google'."
+        )
+    )
 
 
 async def extract_gas_search_params(driver_command: str) -> GasSearchParams:
@@ -71,7 +79,7 @@ async def extract_gas_search_params(driver_command: str) -> GasSearchParams:
     return completion.choices[0].message.parsed
 
 
-async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
+async def geocode_location_here(location: str, api_key: str) -> tuple[float, float]:
     """Converts a text location to coordinates using HERE Geocoding API."""
     url = "https://geocode.search.hereapi.com/v1/geocode"
     params = {
@@ -91,7 +99,7 @@ async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
         return position["lat"], position["lng"]
 
 
-async def browse_gas_stations(lat: float, lng: float, radius: int, api_key: str) -> Dict[str, Any]:
+async def search_gas_here(lat: float, lng: float, radius: int, api_key: str) -> Dict[str, Any]:
     """Searches for gas/petrol stations around coordinates using HERE Browse API."""
     url = "https://browse.search.hereapi.com/v1/browse"
     params = {
@@ -108,81 +116,180 @@ async def browse_gas_stations(lat: float, lng: float, radius: int, api_key: str)
         response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
+    
+
+async def search_gas_google(
+    api_key: str,
+    target_location: Optional[str] = None,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Searches for gas stations using Google Places API."""
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress",
+    }
+
+    if target_location:
+        url = "https://places.googleapis.com/v1/places:searchText"
+        payload = {
+            "textQuery": f"gas station near {target_location}",
+            "includedType": "gas_station",
+            "maxResultCount": 5,
+        }
+
+    elif lat is not None and lng is not None and radius is not None:
+        url = "https://places.googleapis.com/v1/places:searchNearby"
+        payload = {
+            "includedTypes": ["gas_station"],
+            "maxResultCount": 5,
+            "locationRestriction": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": float(radius),
+                }
+            },
+        }
+    else:
+        raise ValueError("Either target_location or coordinates (lat, lng, radius) must be provided.")
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
 
 class GasStationAgent:
-    """Sub-agent that resolves constraints and fetches real gas stations via HERE API."""
+    """Sub-agent that resolves constraints and fetches gas stations via Google Places API or HERE API."""
 
     # HERE Category ID for Gas Stations
     GAS_STATION_CATEGORY_ID = "700-7600-0116"
 
     async def invoke(self, user_request: str, car_lat: Optional[float] = None, car_lng: Optional[float] = None) -> str:
-        here_api_key = os.environ.get("HERE_API_KEY")
-        if not here_api_key:
-            return "Error: HERE_API_KEY environment variable is missing on the server."
-
         try:
             # Extract parameters using OpenAI
             search_params = await extract_gas_search_params(user_request)
-            
-            # Resolve Location to Coordinates
-            if search_params.use_current_location:
-                if car_lat is None or car_lng is None:
-                    return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
-                target_lat, target_lng = car_lat, car_lng
-                location_name = "your current location"
+
+            if search_params.provider == "google":
+                google_api_key = os.environ.get("GOOGLE_API_KEY")
+                if not google_api_key:
+                    return "Error: GOOGLE_API_KEY environment variable is missing on the server."
+                return await self._search_via_google(search_params, car_lat, car_lng, google_api_key)
             else:
-                try:
-                    target_lat, target_lng = await geocode_location(search_params.target_location, here_api_key)
-                    location_name = f"'{search_params.target_location}'"
-                except Exception as e:
-                    return f"Sorry, I couldn't find the location {search_params.target_location}. Please try specifying a different landmark or city."
-
-            # Fetch Data from HERE API
-            raw_results = await browse_gas_stations(
-                lat=target_lat, 
-                lng=target_lng, 
-                radius=search_params.search_radius_meters, 
-                api_key=here_api_key
-            )
+                here_api_key = os.environ.get("HERE_API_KEY")
+                if not here_api_key:
+                    return "Error: HERE_API_KEY environment variable is missing on the server."
+                return await self._search_via_here(search_params, car_lat, car_lng, here_api_key)
             
-            items = raw_results.get("items", [])
-            
-            filtered_items = []
-            for item in items:
-                categories = item.get("categories", [])
-                
-                is_primary_gas_station = any(
-                    cat.get("id") == self.GAS_STATION_CATEGORY_ID and cat.get("primary") is True
-                    for cat in categories
-                )
-                
-                if is_primary_gas_station:
-                    filtered_items.append(item)
-            
-            items = filtered_items
-
-            if not items:
-                return f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
-
-            # Format output into a clean plain text string for A2A pipeline
-            response_lines = [f"I found the following gas stations near {location_name}:"]
-            for i, item in enumerate(items, 1):
-                name = item.get("title", "Unknown Station")
-                address = item.get("address", {}).get("label", "No address available")
-                distance_km = item.get("distance", 0) / 1000
-
-                if search_params.use_current_location:
-                    distance_str = f"{distance_km:.2f} km away"
-                else:
-                    distance_str = f"{distance_km:.2f} km from {location_name}"
-                
-                response_lines.append(f"{i}. {name} - {address} ({distance_str})")
-                
-            return "\n".join(response_lines)
-
         except Exception as e:
             return f"An error occurred while processing the request: {str(e)}"
+    
+
+    async def _search_via_google(
+        self,
+        search_params: GasSearchParams,
+        car_lat: Optional[float],
+        car_lng: Optional[float],
+        api_key: str,
+    ) -> str:
+        """Executes search using Google Places API."""
+        if search_params.use_current_location:
+            if car_lat is None or car_lng is None:
+                return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+            raw_results = await search_gas_google(
+                api_key=api_key,
+                lat=car_lat,
+                lng=car_lng,
+                radius=search_params.search_radius_meters,
+            )
+            location_name = "your current location"
+        else:
+            if not search_params.target_location:
+                return "Sorry, I couldn't understand the target location for the gas station search."
+            raw_results = await search_gas_google(
+                api_key=api_key,
+                target_location=search_params.target_location,
+            )
+            location_name = f"'{search_params.target_location}'"
+
+        places = raw_results.get("places", [])
+        if not places:
+            return f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
+
+        response_lines = [f"I found the following gas stations near {location_name}:"]
+        for i, place in enumerate(places, 1):
+            name = place.get("displayName", {}).get("text", "Gas Station")
+            address = place.get("formattedAddress", "No address available")
+            response_lines.append(f"{i}. {name} - {address}")
+
+        return "\n".join(response_lines)
+    
+
+    async def _search_via_here(
+        self,
+        search_params: GasSearchParams,
+        car_lat: Optional[float],
+        car_lng: Optional[float],
+        api_key: str,
+    ) -> str:
+        """Executes search using HERE API."""
+        # Resolve Location to Coordinates
+        if search_params.use_current_location:
+            if car_lat is None or car_lng is None:
+                return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+            target_lat, target_lng = car_lat, car_lng
+            location_name = "your current location"
+        else:
+            try:
+                target_lat, target_lng = await geocode_location_here(search_params.target_location, api_key)
+                location_name = f"'{search_params.target_location}'"
+            except Exception as e:
+                return f"Sorry, I couldn't find the location {search_params.target_location}. Please try specifying a different landmark or city."
+
+        # Fetch Data from HERE API
+        raw_results = await search_gas_here(
+            lat=target_lat, 
+            lng=target_lng, 
+            radius=search_params.search_radius_meters, 
+            api_key=api_key
+        )
+        
+        items = raw_results.get("items", [])
+        
+        filtered_items = []
+        for item in items:
+            categories = item.get("categories", [])
+            
+            is_primary_gas_station = any(
+                cat.get("id") == self.GAS_STATION_CATEGORY_ID and cat.get("primary") is True
+                for cat in categories
+            )
+            
+            if is_primary_gas_station:
+                filtered_items.append(item)
+        
+        items = filtered_items
+
+        if not items:
+            return f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
+
+        # Format output into a clean plain text string for A2A pipeline
+        response_lines = [f"I found the following gas stations near {location_name}:"]
+        for i, item in enumerate(items, 1):
+            name = item.get("title", "Unknown Station")
+            address = item.get("address", {}).get("label", "No address available")
+            distance_km = item.get("distance", 0) / 1000
+
+            if search_params.use_current_location:
+                distance_str = f"{distance_km:.2f} km away"
+            else:
+                distance_str = f"{distance_km:.2f} km from {location_name}"
+            
+            response_lines.append(f"{i}. {name} - {address} ({distance_str})")
+            
+        return "\n".join(response_lines)
 
 
 class GasStationAgentExecutor(AgentExecutor):
@@ -214,7 +321,9 @@ class GasStationAgentExecutor(AgentExecutor):
         )
 
         query = get_message_text(context.message)
-        
+
+        # Change this if the Orchestrator sends car GPS in a different field.
+        # Currently defaults to Warsaw Center coordinates as a fallback mock.
         car_lat = getattr(context, 'car_lat', 52.2297)
         car_lng = getattr(context, 'car_lng', 21.0122)
 
