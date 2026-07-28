@@ -1,3 +1,4 @@
+import pytest
 from operator import attrgetter
 from context.context_selection import FOOD_AGENT_SELECTION, GAS_AGENT_SELECTION, PARKING_AGENT_SELECTION, ContextKey
 from contracts.agent_request import resolve_agent_context
@@ -6,6 +7,7 @@ from common.fuel import FuelType
 from common.location import Coordinates
 from datetime import datetime
 from contracts.agent_request import AgentContext
+from context.context_selection import ContextSelection
 
 """Simple testing the output of resolve_agent_context function"""
 
@@ -19,21 +21,15 @@ car_context = CarContext(
     profile=vp,
     telemetry=vt)
 
-def test_context_keys():
-    paths = {}
-    for context_key in ContextKey:
-        source_path = context_key.value
-        target_field = source_path.rsplit(".", maxsplit=1)[-1]
-        paths[target_field] = attrgetter(source_path)(car_context)
+EXPECTED_VALUES = vp.model_dump(mode='json') | vt.model_dump(mode='json')
 
-    assert paths['fuel_type'] == 'petrol_95'
-    assert paths['tank_capacity'] == 40.0
-    assert dict(paths['current_location']) == {
-        'latitude': 1.0,
-        'longitude': 2.0
-    }
-    assert paths['remaining_range_km'] == 30.0
-    assert str(paths['observed_at']) == '2026-10-31 20:30:00'
+@pytest.mark.parametrize("context_key", list(ContextKey))
+def test_context_keys(context_key):
+    key_selection = resolve_agent_context(car_context=car_context, selection=ContextSelection(fields=[context_key]))
+    result = key_selection.model_dump(mode='json')
+
+    target_field = context_key.rsplit(".", maxsplit=1)[-1]
+    assert result[target_field] == EXPECTED_VALUES[target_field]
 
 def test_food_agent_selection():
     food_agent_selection = resolve_agent_context(car_context=car_context, selection=FOOD_AGENT_SELECTION)
