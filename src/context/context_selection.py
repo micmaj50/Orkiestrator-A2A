@@ -11,7 +11,13 @@ class ContextKey(StrEnum):
     TANK_CAPACITY = "profile.tank_capacity"
     CURRENT_LOCATION = "telemetry.current_location"
     REMAINING_RANGE_KM = "telemetry.remaining_range_km"
+    TIRE_PRESSURE = "telemetry.tire_pressure"
+    SPEED_KMH = "telemetry.speed_kmh"
     OBSERVED_AT = "telemetry.observed_at"
+    CABIN_TEMP_C = "telemetry.cabin_temperature_c"
+    OUTSIDE_TEMP_C = "telemetry.outside_temperature_c"
+    IGNITION_STATE = "telemetry.ignition_state"
+    ODOMETER_KM = "telemetry.odometer_km"
 
 
 class ContextSelection(ConfiguredBaseModel):
@@ -19,7 +25,6 @@ class ContextSelection(ConfiguredBaseModel):
 
 
 """Predetermined context for each agent"""
-#in AgentSkill could be included in description as " ... needs: {list[ContextKey]}"
 
 FOOD_AGENT_SELECTION: Final = ContextSelection(
     fields=[ContextKey.CURRENT_LOCATION,

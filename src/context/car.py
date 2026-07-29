@@ -1,11 +1,11 @@
 from enum import StrEnum
-
+from typing import Literal
 from datetime import datetime
-
 from pydantic import BaseModel, Field
 
 from common.fuel import FuelType
 from common.location import Coordinates
+from common.tire_pressure import TirePressure
 from common.model_config import ConfiguredBaseModel
 
 
@@ -34,20 +34,22 @@ class VehicleTelemetry(ConfiguredBaseModel):
     - fuel or battery level;
     - current fuel or energy consumption.
 
-    TODO: Decide whether telemetry needs an `observed_at` timestamp for historical telemetry.
     """
     current_location: Coordinates
     remaining_range_km: float | None = Field(default=None, ge=0)
+
+    tire_pressure: TirePressure | None = Field(default=None)
+    speed_kmh: float | None = Field(default=None, ge=0)
     observed_at: datetime
 
+    cabin_temperature_c: float | None = Field(default=None)
+    outside_temperature_c: float | None = Field(default=None)
+    
+    ignition_state: Literal["OFF", "ACC", "ON", "STARTING"] | None = Field(default=None)
+    odometer_km: float | None = Field(default=None, ge=0)
 
 class CarContext(ConfiguredBaseModel):
-    """Vehicle information available to the orchestrator
+    """Vehicle information available to the orchestrator"""
 
-    TODO: Decide whether all data should be forwarded to a particular agent 
-    and if not, how will we manage it.
-
-    TODO: Decide whether route-related information belongs here or in a separate trip context.
-    """
     profile: VehicleProfile
     telemetry: VehicleTelemetry
