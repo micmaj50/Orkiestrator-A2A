@@ -1,5 +1,4 @@
 import httpx
-
 from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.helpers import (
     get_message_text,
@@ -12,6 +11,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Role, SendMessageRequest, TaskState
 from utils.a2a_response import extract_artifact_text
+from langfuse import observe, get_client
 
 from config import get_food_agent_url, get_gas_agent_url, get_parking_agent_url, get_weather_agent_url
 
@@ -24,6 +24,7 @@ WEATHER_AGENT_URL = get_weather_agent_url()
 class Orchestrator:
     """Simple orchestrator"""
 
+    @observe(name="orchestrator_invoke")
     async def invoke(self, user_request: str) -> str:
         question = user_request.lower()
 
@@ -52,6 +53,10 @@ class Orchestrator:
     async def _call_sub_agent(self, user_request: str, agent_url: str) -> str:
         """Send a request to a sub-agent and return its text response"""
 
+        client_lf = get_client()
+        current_trace_id = client_lf.get_current_trace_id()
+        current_span_id = client_lf.get_current_observation_id()
+         
         # Resolve the agent card to discover its A2A interface and capabilities
         async with httpx.AsyncClient() as httpx_client:
             resolver = A2ACardResolver(
@@ -73,6 +78,22 @@ class Orchestrator:
                     user_request,
                     role=Role.ROLE_USER,
                     )
+            
+            if current_trace_id:
+                trace_data = {
+                    "langfuse_trace_id": current_trace_id,
+                    "langfuse_parent_observation_id": current_span_id or "",
+                }
+                
+                if message.metadata is None:
+                    message.metadata = {}
+
+                if hasattr(message.metadata, "update"):
+                    message.metadata.update(trace_data)
+                else:
+                    for k, v in trace_data.items():
+                        message.metadata[k] = v
+
             request = SendMessageRequest(message=message)
 
             extracted_texts: list[str] = []
@@ -116,6 +137,7 @@ class OrchestratorExecutor(AgentExecutor):
         self.agent = Orchestrator()
 
     # Implement the execute method required by the AgentExecutor base class
+    @observe(name="orchestrator_execute")
     async def execute(
             self,
             context: RequestContext,

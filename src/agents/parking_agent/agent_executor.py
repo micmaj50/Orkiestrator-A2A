@@ -1,7 +1,6 @@
 import os
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
 import httpx
 from dotenv import load_dotenv
 from a2a.helpers import (
@@ -14,6 +13,8 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
+from langfuse.openai import AsyncOpenAI # type: ignore
+from langfuse import observe
 
 load_dotenv()
 
@@ -43,7 +44,7 @@ class ParkingSearchParams(BaseModel):
         )
     )
 
-
+@observe(name="extract_parking_search_params")
 async def extract_parking_search_params(driver_command: str) -> ParkingSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
@@ -116,7 +117,15 @@ async def search_parking_google(
 class ParkingAgent:
     """Sub-agent that resolves constraints and fetches parking places using Google Places API."""
 
-    async def invoke(self, user_request: str, car_lat: Optional[float] = None, car_lng: Optional[float] = None) -> str:
+    @observe(name="parking_agent_invoke")
+    async def invoke(
+        self, 
+        user_request: str, 
+        car_lat: Optional[float] = None, 
+        car_lng: Optional[float] = None,
+        langfuse_trace_id: Optional[str] = None,
+        langfuse_parent_observation_id: Optional[str] = None,
+    ) -> str:
         try:
             search_params = await extract_parking_search_params(user_request)
 
@@ -198,6 +207,29 @@ class ParkingAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
+
+        incoming_trace_id: Optional[str] = None
+        incoming_parent_id: Optional[str] = None
+
+        if hasattr(context.message, "metadata") and context.message.metadata:
+            meta = context.message.metadata
+            val_trace = None
+            val_parent = None
+
+            if hasattr(meta, "get"):
+                val_trace = meta.get("langfuse_trace_id")
+                val_parent = meta.get("langfuse_parent_observation_id")
+            else:
+                try:
+                    val_trace = meta["langfuse_trace_id"]
+                    val_parent = meta["langfuse_parent_observation_id"]
+                except (KeyError, TypeError):
+                    pass
+
+            if val_trace is not None:
+                incoming_trace_id = str(val_trace)
+            if val_parent is not None:
+                incoming_parent_id = str(val_parent)
         
         # Reuse the current task or create one for a new request
         if context.current_task:
@@ -226,7 +258,13 @@ class ParkingAgentExecutor(AgentExecutor):
         car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
-            result = await self.agent.invoke(user_request=query, car_lat=car_lat, car_lng=car_lng)
+            result = await self.agent.invoke(
+                user_request=query, 
+                car_lat=car_lat, 
+                car_lng=car_lng,
+                langfuse_trace_id=incoming_trace_id,
+                langfuse_parent_observation_id=incoming_parent_id
+            )
         else:
             result = 'No text input is provided!'
 
