@@ -3,6 +3,7 @@ from typing import Union,Dict,Any
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import BasePromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langfuse.langchain import CallbackHandler
 
 
 #callable LLM class
@@ -40,6 +41,8 @@ class Llm:
 
 
         parser = JsonOutputParser() if asJSON else StrOutputParser()
-                
         chain = prompt | self.llm | parser
-        return chain.invoke(inputs)
+
+        langfuse_handler = CallbackHandler()
+
+        return chain.invoke(inputs, config={"callbacks": [langfuse_handler]})
