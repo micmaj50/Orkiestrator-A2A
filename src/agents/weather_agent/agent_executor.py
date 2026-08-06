@@ -91,9 +91,9 @@ class WeatherAgent:
 
     @observe(name="weather_agent_invoke")
     async def invoke(
-            self, 
-        user_request: str, 
-        car_lat: Optional[float] = None, 
+        self,
+        user_request: str,
+        car_lat: Optional[float] = None,
         car_lng: Optional[float] = None,
         langfuse_trace_id: Optional[str] = None,
         langfuse_parent_observation_id: Optional[str] = None,

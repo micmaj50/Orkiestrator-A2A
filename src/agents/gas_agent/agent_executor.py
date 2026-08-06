@@ -170,13 +170,13 @@ class GasStationAgent:
 
     @observe(name="gas_agent_invoke")
     async def invoke(
-    self, 
-    user_request: str, 
-    car_lat: Optional[float] = None, 
-    car_lng: Optional[float] = None,
-    langfuse_trace_id: Optional[str] = None,
-    langfuse_parent_observation_id: Optional[str] = None
-) -> str:
+        self, 
+        user_request: str, 
+        car_lat: Optional[float] = None, 
+        car_lng: Optional[float] = None,
+        langfuse_trace_id: Optional[str] = None,
+        langfuse_parent_observation_id: Optional[str] = None
+    ) -> str:
         try:
             # Extract parameters using OpenAI
             search_params = await extract_gas_search_params(user_request)
