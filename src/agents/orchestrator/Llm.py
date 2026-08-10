@@ -1,8 +1,9 @@
 import os
-from typing import Union,Dict,Any
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import BasePromptTemplate
+from typing import Any
+
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.prompts import BasePromptTemplate
+from langchain_openai import ChatOpenAI
 from langfuse.langchain import CallbackHandler
 
 
@@ -16,7 +17,7 @@ class Llm:
         )
 
 
-    def __call__(self, prompt: BasePromptTemplate, inputs: Dict[str, Any], asJSON: bool) -> Union[dict, str]:
+    def __call__(self, prompt: BasePromptTemplate, inputs: dict[str, Any], asJSON: bool) -> dict | str:
 
         """
         executes a merged prompt
@@ -27,7 +28,7 @@ class Llm:
         ----------
         prompt : BasePromptTemplate
             An unformatted prompt template (e.g., PromptTemplate, ChatPromptTemplate).
-        inputs : Dict[str, Any]
+        inputs : dict[str, Any]
             A dictionary containing the keys and values to format into the template.
         asJSON : bool
             A flag indicating whether to parse and return the output as a dictionary (True) 

@@ -1,0 +1,49 @@
+services:
+  gas_agent:
+    build: .
+    command: uv run python -m agents.gas_agent
+    environment:
+      A2A_BIND_HOST: "0.0.0.0"
+      GAS_AGENT_HOST: "gas-agent"
+      GAS_AGENT_PORT: "${GAS_AGENT_PORT:-9998}"
+      HERE_API_KEY: "${HERE_API_KEY:-}"
+
+
+  food_agent:
+    build: .
+    command: uv run python -m agents.food_agent
+    environment:
+      A2A_BIND_HOST: "0.0.0.0"
+      FOOD_AGENT_HOST: "food-agent"
+      FOOD_AGENT_PORT: "${FOOD_AGENT_PORT:-9997}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+
+  orchestrator:
+    build: .
+    command: uv run python -m agents.orchestrator
+    environment:
+      A2A_BIND_HOST: "0.0.0.0"
+
+      ORCHESTRATOR_HOST: "orchestrator"
+      ORCHESTRATOR_PORT: "${ORCHESTRATOR_PORT:-9999}"
+
+      GAS_AGENT_HOST: "gas-agent"
+      GAS_AGENT_PORT: "${GAS_AGENT_PORT:-9998}"
+
+      FOOD_AGENT_HOST: "food-agent"
+      FOOD_AGENT_PORT: "${FOOD_AGENT_PORT:-9997}"
+
+    depends_on:
+      - gas_agent
+      - food_agent
+
+  test-client:
+    build: .
+    command: uv run python src/utils/test_client.py
+    environment:
+      ORCHESTRATOR_HOST: "orchestrator"
+      ORCHESTRATOR_PORT: "${ORCHESTRATOR_PORT:-9999}"
+    stdin_open: true
+    tty: true
+    depends_on:
+      - orchestrator

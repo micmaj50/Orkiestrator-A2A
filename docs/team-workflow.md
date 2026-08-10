@@ -18,6 +18,7 @@ Use following branch prefixes:
 
 - `feature/...` - new functionality intended for the real project. Push to origin, open a merge request, review, merge into `main`, delete branch.
 - `fix/...` - bug fixes. Push to origin, open a merge request, merge into `main`, delete branch.
+- `test/` - adding or improving tests without changing production behavior. Push to origin, open a merge request, review, merge into `main`, delete branch.
 - `docs/...` - documentation changes. Push to origin, open a merge request, review, merge into `main`, delete branch.
 - `chore/...` - tooling, configuration, dependencies, CI/CD setup. Push to origin, open a merge request, review, merge into `main`, delete branch.
 - `spike/...` - short research/prototype work to answer a technical question. Push if useful for sharing or discussion. Don't merge into `main`. Useful ideas should be extracted or rewritten into a clean `feature/...` or `chore/...` branch.
@@ -39,6 +40,32 @@ Examples:
 - `chore/add-basic-ci`
 - `spike/agent-executor`
 - `playground/vlad-executor-helloworld`
+
+## Commit naming
+
+Commit messages should use the following format:
+`<type>(<optional-scope>): <description>`
+
+The scope is optional and identifies the component or area affected by the change.
+
+Available commit types:
+
+- `feat` -- new functionality intended for the real project.
+- `fix` -- bug fixes.
+- `test` -- test changes.
+- `docs` -- documentation changes.
+- `chore` -- tooling, configuration, dependencies and CI/CD changes.
+
+Examples:
+
+`feat(orchestrator-langgraph): add agent delegation node`
+`fix(config): use configured agent endpoint`
+`docs(workflow) define commit naming rules and update branch naming rules`
+`chore(ci) add integration test job`
+
+The commit type describes the individual change and does not have to match the branch prefix. For example, a feature branch may contain `feat`, `test` and `fix` commits. 
+Scopes should be used when they provide useful context, such as the affected agent, component or project area. They may be omitted when the affected area is already clear or the change applies to the whole project.
+Commit naming rules do not need to be enforced on `spike/` or `playground/` branches because these branches are not merged into the main branch.
 
 ## Experiments
 
@@ -69,11 +96,11 @@ After merging, delete the source branch.
 
 ## Tests
 
-Tests should usually be added in the same branch as the code they test.
+Tests should usually be added in the same branch as the code they verify.
 
-For example, if a branch adds an agent-skill, the same branch should also add or update tests for that.
+Use `test/` for adding or improving tests independently, without changing production behavior.
 
-Use `chore/...` only for test infrastructure, such as adding `pytest`, test configuration, or CI.
+Use `chore/` only for test infrastructure, such as `pytest`, test configuration, dependencies, or CI.
 
 ## Shared interfaces
 

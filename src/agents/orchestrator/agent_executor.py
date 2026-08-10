@@ -1,3 +1,4 @@
+from langchain_core.messages import HumanMessage
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.helpers import (
@@ -13,35 +14,29 @@ from a2a.types import Role, SendMessageRequest, TaskState
 from utils.a2a_response import extract_artifact_text
 from langfuse import observe, get_client
 
-from config import get_food_agent_url, get_gas_agent_url, get_parking_agent_url, get_weather_agent_url
-
-GAS_AGENT_URL  = get_gas_agent_url()
-FOOD_AGENT_URL = get_food_agent_url()
-PARKING_AGENT_URL = get_parking_agent_url()
-WEATHER_AGENT_URL = get_weather_agent_url()
+from agents.graph import graph
+from agents.state import GraphState
 
 
 class Orchestrator:
-    """Simple orchestrator"""
+    """Orchestrator backed by the LangGraph multi-agent graph."""
 
     @observe(name="orchestrator_invoke")
     async def invoke(self, user_request: str) -> str:
-        question = user_request.lower()
+        state = GraphState(user_input=HumanMessage(content=user_request))
 
-        if 'gas' in question:
-            gas_result = await self._call_sub_agent(user_request, GAS_AGENT_URL)
-            return self._format_result(gas_result)
+        # graph.ainvoke returns the final state as a dict-like mapping
+        # (channel name -> value) for a pydantic state schema.
+        result = await graph.ainvoke(state)
 
-        if 'food' in question:
-            food_result = await self._call_sub_agent(user_request, FOOD_AGENT_URL)
-            return self._format_result(food_result)
-        
-        if 'parking' in question:
-            parking_result = await self._call_sub_agent(user_request, PARKING_AGENT_URL)
-            return self._format_result(parking_result)
+        if isinstance(result, GraphState):
+            messages = result.messages
+        else:
+            messages = result.get('messages', [])
 
-        if 'weather' in question:
-            return await self._call_sub_agent(user_request, WEATHER_AGENT_URL)
+        if messages:
+            final_message = messages[-1]
+            return str(getattr(final_message, 'content', final_message))
 
         return(
                 'Unsupported request\n'
@@ -154,8 +149,8 @@ class OrchestratorExecutor(AgentExecutor):
 
         # 2. Mark the task as working in EventQueue before invoking the orchestrator logic
         task_updater = TaskUpdater(
-            event_queue=event_queue, 
-            task_id=task.id, 
+            event_queue=event_queue,
+            task_id=task.id,
             context_id=task.context_id
         )
 
@@ -165,7 +160,7 @@ class OrchestratorExecutor(AgentExecutor):
         )
 
 
-        # 3. Extract the user's text and pass it to the orchestrator
+        # 3. Extract the user's text and pass it to the orchestrator graph
         query = get_message_text(context.message)
         if query:
             result = await self.agent.invoke(user_request=query)
@@ -176,7 +171,7 @@ class OrchestratorExecutor(AgentExecutor):
         await task_updater.add_artifact(
                 parts=[
                     new_text_part(
-                        text=result, 
+                        text=result,
                         media_type='text/plain'
                         )
                     ]

@@ -1,9 +1,8 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import get_buffer_string
-from typing import cast
 
 from agents.state import GraphState
-from agents.orchestrator.Llm import Llm
+from agents.orchestrator.llm import Llm
 
 class Synthesizer:
     def __init__(self):
@@ -24,7 +23,7 @@ class Synthesizer:
             template=self.template_string
         )
 
-    def __call__(self, state: GraphState, llm: Llm, _asJSON=True):
+    def __call__(self, state: GraphState, llm: Llm, _asJSON=False):
         if isinstance(state.user_input.content, str):
             request = state.user_input.content
         else:
@@ -32,14 +31,16 @@ class Synthesizer:
 
         answers = get_buffer_string(state.messages)
 
-        prompt = self.prompt_template.partial(
-            user_request=request,
-            agent_answers=answers
+        final_response = llm(
+            prompt=self.prompt_template,
+            inputs={
+                "user_request": request,
+                "agent_answers": answers,
+            },
+            asJSON=_asJSON
         )
-        ready_prompt = cast(PromptTemplate, prompt)
-
-        final_response = llm(prompt=ready_prompt, asJSON=_asJSON)
 
         self.responses.append(final_response)
 
         return final_response
+    

@@ -1,7 +1,8 @@
 ENV_FILE ?= .env
 UV_RUN := uv run --env-file $(ENV_FILE)
 
-.PHONY: run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client
+.PHONY: run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client \
+	docker-config docker-build docker-up docker-up-build docker-build-no-cache docker-ps docker-logs docker-client docker-down docker-smoke
 
 run-orchestrator:
 	$(UV_RUN) python -m agents.orchestrator
@@ -23,3 +24,33 @@ run-client:
 
 test-integration:
 	$(UV_RUN) pytest -s tests/integration/smoke_test.py
+
+docker-config:
+	docker compose config
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d
+
+docker-up-build:
+	docker compose up -d --build
+
+docker-build-no-cache:
+	docker compose build --no-cache
+
+docker-ps:
+	docker compose ps
+
+docker-logs:
+	docker compose logs -f $(SERVICE)
+
+docker-client:
+	docker compose run --rm test-client
+
+docker-down:
+	docker compose down
+
+docker-smoke:
+	printf 'gas\n' | docker compose run --rm -T test-client

@@ -1,0 +1,1914 @@
+"""Fictional agents used to fill the vector database.
+
+Nothing runs in the background - they simply provide a realistic number of entries to search through.
+"""
+
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    AgentInterface,
+    AgentSkill,
+)
+
+
+MOCK_AGENT_CARDS: list[AgentCard] = [
+    AgentCard(
+        name='Bike Rental Agent',
+        description='Sub-agent for finding city bikes available for rent nearby.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9100',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-city-bikes',
+                name='Find Available City Bikes',
+                description='Finds docking stations with bikes available near the car location or a specified place.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['bikes', 'rental', 'mobility'],
+                examples=[
+                    'find a city bike near the main square',
+                    'where can I rent a bike here',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Train Timetable Agent',
+        description='Sub-agent for checking train departures, arrivals and delays.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9101',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-train-connections',
+                name='Check Train Connections',
+                description='Returns train connections between two stations, including changes and reported delays.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['trains', 'timetable', 'travel'],
+                examples=[
+                    'next train from Krakow to Warsaw',
+                    'is the 14:20 train delayed',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Flight Status Agent',
+        description='Sub-agent for checking flight status and gate assignments.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9102',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-flight-status',
+                name='Check Flight Status',
+                description='Reports departure time, gate and delay status for a given flight number or route.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['flights', 'airport', 'status'],
+                examples=[
+                    'is flight LO312 on time',
+                    'which gate for the Vienna flight',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Hotel Booking Agent',
+        description='Sub-agent for finding and booking hotel rooms near a location.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9103',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-hotel-rooms',
+                name='Find Hotel Rooms',
+                description='Finds available rooms for a date range near a location and reports the nightly rate.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['hotels', 'booking', 'accommodation'],
+                examples=[
+                    'a room for two nights near the airport',
+                    'cheapest hotel within 5 km',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Restaurant Reservation Agent',
+        description='Sub-agent for reserving tables in nearby restaurants.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9104',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='reserve-restaurant-table',
+                name='Reserve a Restaurant Table',
+                description='Checks table availability for a party size and time, and confirms the reservation.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['restaurants', 'reservation', 'dining'],
+                examples=[
+                    'book a table for four at seven',
+                    'any free table nearby tonight',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Grocery Delivery Agent',
+        description='Sub-agent for ordering groceries to a delivery address.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9105',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='order-groceries',
+                name='Order Groceries',
+                description='Builds a basket from a shopping list and books the earliest available delivery slot.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['groceries', 'delivery', 'shopping'],
+                examples=[
+                    'order milk, bread and coffee',
+                    'earliest grocery delivery today',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Pharmacy Agent',
+        description='Sub-agent for finding open pharmacies and checking medicine availability.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9106',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-pharmacy',
+                name='Find Open Pharmacy',
+                description='Finds pharmacies open now near a location and checks whether a medicine is in stock.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['pharmacy', 'medicine', 'health'],
+                examples=[
+                    'which pharmacy is open at night',
+                    'do they have ibuprofen in stock',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Doctor Appointment Agent',
+        description='Sub-agent for booking medical appointments.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9107',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='book-doctor-appointment',
+                name='Book a Medical Appointment',
+                description='Finds free appointment slots for a medical specialty and books the chosen one.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['doctor', 'appointment', 'health'],
+                examples=[
+                    'book a dentist appointment next week',
+                    'earliest cardiology slot',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Currency Exchange Agent',
+        description='Sub-agent for currency conversion and exchange rates.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9108',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='convert-currency',
+                name='Convert Currency',
+                description='Converts an amount between currencies using the current rate and reports the fee.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['currency', 'exchange', 'finance'],
+                examples=[
+                    'how much is 100 euro in zloty',
+                    'exchange rate for dollars today',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Bank Transfer Agent',
+        description='Sub-agent for checking account balance and payment status.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9109',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-payment-status',
+                name='Check Payment Status',
+                description='Reports the balance of an account and whether a given transfer has been settled.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['banking', 'payments', 'transfers'],
+                examples=[
+                    'what is my current balance',
+                    'has yesterday transfer arrived',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Invoice Agent',
+        description='Sub-agent for issuing and looking up invoices.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9110',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='manage-invoices',
+                name='Issue and Find Invoices',
+                description='Issues an invoice for a given order and finds existing invoices by number or customer.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['invoices', 'accounting', 'documents'],
+                examples=[
+                    'issue an invoice for this order',
+                    'find the invoice from March',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Expense Report Agent',
+        description='Sub-agent for recording business expenses from receipts.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9111',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='record-expense',
+                name='Record a Business Expense',
+                description='Reads a receipt, assigns the expense to a category and adds it to the current report.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['expenses', 'receipts', 'business'],
+                examples=[
+                    'add this fuel receipt to my expenses',
+                    'how much did I spend on tolls',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Package Tracking Agent',
+        description='Sub-agent for tracking parcels across couriers.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9112',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='track-package',
+                name='Track a Package',
+                description='Reports the current location and estimated delivery date of a parcel by tracking number.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['parcels', 'tracking', 'delivery'],
+                examples=[
+                    'where is my package',
+                    'when will the parcel arrive',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Courier Pickup Agent',
+        description='Sub-agent for arranging courier pickups.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9113',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='arrange-courier-pickup',
+                name='Arrange a Courier Pickup',
+                description='Books a courier pickup at an address for a chosen time window and returns the label.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['courier', 'pickup', 'shipping'],
+                examples=[
+                    'arrange a pickup for tomorrow morning',
+                    'send a parcel to Gdansk',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Warehouse Stock Agent',
+        description='Sub-agent for checking stock levels in warehouses.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9114',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-stock-levels',
+                name='Check Stock Levels',
+                description='Reports how many units of an article are available in each warehouse location.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['warehouse', 'stock', 'inventory'],
+                examples=[
+                    'how many units are left in stock',
+                    'which warehouse has this article',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Product Search Agent',
+        description='Sub-agent for finding products in an online shop catalogue.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9115',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='search-products',
+                name='Search the Product Catalogue',
+                description='Finds catalogue products matching a description, price range and required features.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['shopping', 'products', 'search'],
+                examples=[
+                    'waterproof hiking boots size 43',
+                    'laptops under 4000 zloty',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Price Comparison Agent',
+        description='Sub-agent for comparing prices of a product across shops.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9116',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='compare-prices',
+                name='Compare Prices Across Shops',
+                description='Compares the price and availability of one product across online shops and reports the cheapest.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['prices', 'comparison', 'shopping'],
+                examples=[
+                    'where is this phone cheapest',
+                    'compare prices for this printer',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Order Returns Agent',
+        description='Sub-agent for handling returns and refunds of online orders.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9117',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='handle-order-return',
+                name='Handle an Order Return',
+                description='Checks whether an order can still be returned and issues a return label and refund request.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['returns', 'refunds', 'orders'],
+                examples=[
+                    'I want to return these shoes',
+                    'when will I get my refund',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Cinema Tickets Agent',
+        description='Sub-agent for finding cinema screenings and buying tickets.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9118',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-cinema-screenings',
+                name='Find Cinema Screenings',
+                description='Finds screenings of a film in nearby cinemas and reserves seats for a chosen showing.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['cinema', 'tickets', 'entertainment'],
+                examples=[
+                    'what is playing tonight nearby',
+                    'two tickets for the evening screening',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Event Tickets Agent',
+        description='Sub-agent for finding concerts and events with available tickets.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9119',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-events',
+                name='Find Events and Tickets',
+                description='Finds concerts and events near a location on a given date and reports ticket availability.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['events', 'concerts', 'tickets'],
+                examples=[
+                    'any concerts this weekend',
+                    'events near me on Saturday',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Museum Guide Agent',
+        description='Sub-agent for museum opening hours and exhibitions.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9120',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-museum-info',
+                name='Check Museums and Exhibitions',
+                description='Reports opening hours, ticket prices and current exhibitions for museums near a location.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['museums', 'culture', 'sightseeing'],
+                examples=[
+                    'is the museum open on Monday',
+                    'what exhibitions are on right now',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Translation Agent',
+        description='Sub-agent for translating short texts between languages.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9121',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='translate-text',
+                name='Translate Text',
+                description='Translates a short text between two languages and keeps the original formatting.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['translation', 'languages', 'text'],
+                examples=[
+                    'translate this sign into Polish',
+                    'how do I say this in German',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Calendar Agent',
+        description='Sub-agent for checking and creating calendar entries.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9122',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='manage-calendar',
+                name='Check and Create Calendar Entries',
+                description='Reports what is scheduled for a day and adds new entries with the right duration.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['calendar', 'schedule', 'meetings'],
+                examples=[
+                    'what do I have tomorrow',
+                    'add a meeting at three',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Meeting Notes Agent',
+        description='Sub-agent for summarising meetings into notes and actions.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9123',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='summarise-meeting',
+                name='Summarise a Meeting',
+                description='Turns a meeting transcript into a short summary with decisions and follow-up actions.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['meetings', 'notes', 'summary'],
+                examples=[
+                    'summarise this meeting',
+                    'what did we agree on',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Email Draft Agent',
+        description='Sub-agent for drafting and sending short emails.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9124',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='draft-email',
+                name='Draft an Email',
+                description='Drafts an email from a short instruction, matching the requested tone and length.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['email', 'writing', 'communication'],
+                examples=[
+                    'write a short reply declining this',
+                    'draft an email to the workshop',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Task Reminder Agent',
+        description='Sub-agent for setting reminders and listing pending tasks.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9125',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='set-reminder',
+                name='Set Reminders and List Tasks',
+                description='Creates a reminder for a given time or place and lists tasks that are still pending.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['reminders', 'tasks', 'productivity'],
+                examples=[
+                    'remind me to refuel tomorrow',
+                    'what is still on my list',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='News Digest Agent',
+        description='Sub-agent for summarising current news by topic.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9126',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='summarise-news',
+                name='Summarise Current News',
+                description='Collects recent articles on a topic and returns a short digest with the sources.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['news', 'summary', 'media'],
+                examples=[
+                    'what happened in the news today',
+                    'summarise news about fuel prices',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Sports Results Agent',
+        description='Sub-agent for match results and league standings.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9127',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-sports-results',
+                name='Check Sports Results',
+                description='Reports match results, upcoming fixtures and current standings for a team or league.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['sports', 'results', 'standings'],
+                examples=[
+                    'what was the score yesterday',
+                    'when is the next match',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Recipe Agent',
+        description='Sub-agent for suggesting recipes from available ingredients.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9128',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='suggest-recipe',
+                name='Suggest a Recipe',
+                description='Suggests recipes that can be cooked from given ingredients within a time limit.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['recipes', 'cooking', 'food'],
+                examples=[
+                    'what can I cook with chicken and rice',
+                    'a quick dinner in 20 minutes',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Nutrition Agent',
+        description='Sub-agent for calorie and nutrition information about meals.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9129',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-nutrition',
+                name='Check Nutrition Values',
+                description='Reports calories and macronutrients for a described meal or a packaged product.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['nutrition', 'calories', 'health'],
+                examples=[
+                    'how many calories in this meal',
+                    'is this snack high in sugar',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Workout Plan Agent',
+        description='Sub-agent for building simple training plans.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9130',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='build-workout-plan',
+                name='Build a Workout Plan',
+                description='Builds a weekly training plan for a goal and the number of days available.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['training', 'fitness', 'sport'],
+                examples=[
+                    'plan three workouts a week',
+                    'training plan for a 10 km run',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Air Quality Agent',
+        description='Sub-agent for air quality and smog levels at a location.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9131',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-air-quality',
+                name='Check Air Quality',
+                description='Reports current air quality index and pollutant levels for the car location or a city.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['air-quality', 'smog', 'environment'],
+                examples=[
+                    'what is the air quality here',
+                    'is there smog in Krakow today',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Pollen Forecast Agent',
+        description='Sub-agent for pollen levels and allergy forecasts.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9132',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-pollen-forecast',
+                name='Check Pollen Forecast',
+                description='Reports current and forecast pollen concentration for the main allergens at a location.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['pollen', 'allergy', 'forecast'],
+                examples=[
+                    'is the pollen level high today',
+                    'pollen forecast for the weekend',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Road Works Agent',
+        description='Sub-agent for road works and closures on a route.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9133',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-road-works',
+                name='Check Road Works and Closures',
+                description='Reports road works, closures and expected delays along a planned route.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['road-works', 'traffic', 'route'],
+                examples=[
+                    'any road works on the way to Wroclaw',
+                    'is this road closed',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Toll Calculator Agent',
+        description='Sub-agent for calculating road tolls for a route.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9134',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='calculate-tolls',
+                name='Calculate Road Tolls',
+                description='Calculates toll costs for a route and vehicle class, and lists the toll sections.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['tolls', 'route', 'costs'],
+                examples=[
+                    'how much are the tolls to Berlin',
+                    'cheaper route without tolls',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Car Wash Agent',
+        description='Sub-agent for finding car washes nearby.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9135',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-car-wash',
+                name='Find a Car Wash',
+                description='Finds car washes near a location, with opening hours, price range and queue length.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['car-wash', 'vehicle', 'services'],
+                examples=[
+                    'find a car wash nearby',
+                    'cheapest car wash on the way',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Tyre Service Agent',
+        description='Sub-agent for booking tyre changes and repairs.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9136',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='book-tyre-service',
+                name='Book a Tyre Service',
+                description='Finds tyre workshops with free slots and books a change or a puncture repair.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['tyres', 'workshop', 'vehicle'],
+                examples=[
+                    'book a tyre change for Friday',
+                    'who can fix a flat tyre now',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Vehicle Inspection Agent',
+        description='Sub-agent for technical inspection dates and stations.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9137',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-vehicle-inspection',
+                name='Check Vehicle Inspection',
+                description='Reports when the next technical inspection is due and finds stations with free slots.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['inspection', 'vehicle', 'legal'],
+                examples=[
+                    'when is my inspection due',
+                    'book a technical inspection',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Insurance Quote Agent',
+        description='Sub-agent for vehicle insurance quotes.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9138',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='quote-insurance',
+                name='Quote Vehicle Insurance',
+                description='Prices a vehicle insurance policy from the declared driver and vehicle details.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['insurance', 'quote', 'vehicle'],
+                examples=[
+                    'how much for third party insurance',
+                    'quote a policy for this car',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Legal Document Agent',
+        description='Sub-agent for explaining clauses in simple contracts.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9139',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='explain-contract-clause',
+                name='Explain a Contract Clause',
+                description='Explains what a contract clause means in plain language and points out unusual terms.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['legal', 'contracts', 'documents'],
+                examples=[
+                    'what does this clause mean',
+                    'is anything unusual in this contract',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Tax Deadline Agent',
+        description='Sub-agent for tax deadlines and required forms.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9140',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-tax-deadlines',
+                name='Check Tax Deadlines',
+                description='Reports upcoming tax deadlines and which forms have to be filed for a given situation.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['taxes', 'deadlines', 'forms'],
+                examples=[
+                    'when is the tax return due',
+                    'which form do I need to file',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Job Offers Agent',
+        description='Sub-agent for searching job offers.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9141',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='search-job-offers',
+                name='Search Job Offers',
+                description='Finds job offers matching a role, location and salary expectation.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['jobs', 'search', 'recruitment'],
+                examples=[
+                    'find driver jobs near Poznan',
+                    'remote jobs in logistics',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Apartment Rental Agent',
+        description='Sub-agent for finding apartments available to rent.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9142',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-rental-apartments',
+                name='Find Apartments to Rent',
+                description='Finds rental listings matching size, price and location, and reports the total monthly cost.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['rental', 'apartments', 'housing'],
+                examples=[
+                    'two room flat under 3000 a month',
+                    'apartments near the tram line',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Utility Bills Agent',
+        description='Sub-agent for checking utility bills and meter readings.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9143',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-utility-bills',
+                name='Check Utility Bills',
+                description='Reports the amount and due date of utility bills and accepts new meter readings.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['bills', 'utilities', 'household'],
+                examples=[
+                    'how much is the electricity bill',
+                    'submit the meter reading',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Waste Collection Agent',
+        description='Sub-agent for waste collection dates and sorting rules.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9144',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-waste-collection',
+                name='Check Waste Collection',
+                description='Reports the next collection date for each waste type and explains local sorting rules.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['waste', 'recycling', 'municipal'],
+                examples=[
+                    'when is glass collected',
+                    'which bin for this packaging',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Postal Office Agent',
+        description='Sub-agent for post office locations and shipping prices.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9145',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-post-office',
+                name='Find a Post Office',
+                description='Finds post offices and parcel lockers near a location and quotes the shipping price.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['post', 'shipping', 'locations'],
+                examples=[
+                    'nearest parcel locker',
+                    'how much to send this abroad',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Language Tutor Agent',
+        description='Sub-agent for short language exercises and vocabulary practice.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9146',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='practise-language',
+                name='Practise a Language',
+                description='Generates short vocabulary and grammar exercises at the requested difficulty level.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['language', 'learning', 'exercises'],
+                examples=[
+                    'practise German vocabulary',
+                    'give me five grammar exercises',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Plant Care Agent',
+        description='Sub-agent for plant watering and care advice.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9147',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='advise-plant-care',
+                name='Advise on Plant Care',
+                description='Advises how often to water and feed a plant and diagnoses common problems from a description.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['plants', 'gardening', 'care'],
+                examples=[
+                    'how often should I water this plant',
+                    'why are the leaves turning yellow',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Ferry Timetable Agent',
+        description='Sub-agent for ferry crossings and on-board vehicle space.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9148',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-ferry-crossings',
+                name='Check Ferry Crossings',
+                description='Reports ferry departures on a route, crossing time and whether vehicle space is still available.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['ferry', 'crossing', 'travel'],
+                examples=[
+                    'next ferry to Ystad',
+                    'is there space for a car on the morning ferry',
+                ],
+            )
+        ],
+    ),
+    AgentCard(
+        name='Veterinary Clinic Agent',
+        description='Sub-agent for finding veterinary clinics and booking visits.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9149',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='find-veterinary-clinic',
+                name='Find a Veterinary Clinic',
+                description='Finds veterinary clinics open near a location, including emergency ones, and books a visit.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['veterinary', 'animals', 'clinic'],
+                examples=[
+                    'find a vet open now',
+                    'book a visit for a dog vaccination',
+                ],
+            )
+        ],
+    ),
+    # The cards below carry more than one skill each. See the module docstring.
+    AgentCard(
+        name='Travel Concierge Agent',
+        description='Sub-agent for handling business travel arrangements end to end.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9150',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='rebook-flight',
+                name='Rebook a Flight',
+                description='Finds alternative flights after a cancellation or delay and moves the booking to the chosen one.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['flights', 'rebooking', 'travel'],
+                examples=[
+                    'my flight was cancelled, find another one',
+                    'move me to a later flight',
+                ],
+            ),
+            AgentSkill(
+                id='arrange-airport-transfer',
+                name='Arrange an Airport Transfer',
+                description='Books a car or a shuttle between the airport and the hotel for a given arrival time.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['transfer', 'airport', 'ground-transport'],
+                examples=[
+                    'I need a ride from the airport',
+                    'book a transfer to the hotel at nine',
+                ],
+            ),
+            AgentSkill(
+                id='manage-hotel-stay',
+                name='Manage a Hotel Stay',
+                description='Changes check-in and check-out times on an existing booking and requests a late checkout.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['hotel', 'booking', 'stay'],
+                examples=[
+                    'ask for a late checkout',
+                    'I will arrive after midnight',
+                ],
+            ),
+            AgentSkill(
+                id='file-travel-insurance-claim',
+                name='File a Travel Insurance Claim',
+                description='Collects the documents for a delay or lost luggage claim and submits it to the insurer.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['insurance', 'claim', 'travel'],
+                examples=[
+                    'my luggage did not arrive',
+                    'claim for a six hour delay',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='Fleet Management Agent',
+        description='Sub-agent for managing a company fleet of vehicles and their drivers.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9151',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='assign-fleet-vehicle',
+                name='Assign a Fleet Vehicle',
+                description='Picks a free vehicle from the fleet for a booked trip and assigns it to a driver.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['fleet', 'vehicle', 'assignment'],
+                examples=[
+                    'which van is free on Tuesday',
+                    'assign a car for the Poznan trip',
+                ],
+            ),
+            AgentSkill(
+                id='manage-fuel-cards',
+                name='Manage Fuel Cards and Refuelling Stops',
+                description='Reports fuel card limits and lists contracted refuelling and charging points along a fleet route.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['fuel-card', 'refuelling', 'fleet'],
+                examples=[
+                    'where can the driver refuel on contract',
+                    'how much is left on this fuel card',
+                ],
+            ),
+            AgentSkill(
+                id='log-driver-mileage',
+                name='Log Driver Mileage',
+                description='Records the mileage of a completed trip and assigns it to the right cost centre.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['mileage', 'logging', 'fleet'],
+                examples=[
+                    'log 240 km for today',
+                    'mileage report for last month',
+                ],
+            ),
+            AgentSkill(
+                id='schedule-fleet-service',
+                name='Schedule Fleet Servicing',
+                description='Reports which vehicles are due for servicing and books a slot at the contracted garage.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['servicing', 'maintenance', 'fleet'],
+                examples=[
+                    'which cars need a service',
+                    'book a service for the blue van',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='Personal Finance Agent',
+        description='Sub-agent for reviewing personal spending and savings.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9152',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='summarise-monthly-budget',
+                name='Summarise the Monthly Budget',
+                description='Groups the spending of a month into categories and compares it against the planned budget.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['budget', 'spending', 'finance'],
+                examples=[
+                    'where did my money go this month',
+                    'am I over budget',
+                ],
+            ),
+            AgentSkill(
+                id='audit-subscriptions',
+                name='Audit Recurring Subscriptions',
+                description='Lists recurring charges, flags the unused ones and reports what they cost over a year.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['subscriptions', 'recurring', 'finance'],
+                examples=[
+                    'what am I paying monthly for',
+                    'find subscriptions I do not use',
+                ],
+            ),
+            AgentSkill(
+                id='track-savings-goal',
+                name='Track a Savings Goal',
+                description='Reports progress towards a savings goal and how much has to be put aside each month.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['savings', 'goals', 'finance'],
+                examples=[
+                    'how far am I from the deposit',
+                    'how much should I save each month',
+                ],
+            ),
+            AgentSkill(
+                id='convert-holiday-currency',
+                name='Convert a Holiday Budget',
+                description='Converts a holiday budget into the currency of the destination and reports the card fees.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['currency', 'holiday', 'finance'],
+                examples=[
+                    'how much is my budget in forint',
+                    'what will the card charge me abroad',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='City Services Agent',
+        description='Sub-agent for municipal services provided by a city.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9153',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='check-transport-disruptions',
+                name='Check Public Transport Disruptions',
+                description='Reports tram and bus disruptions on a line and suggests the replacement route.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['public-transport', 'disruptions', 'city'],
+                examples=[
+                    'is the tram running today',
+                    'why is the bus not coming',
+                ],
+            ),
+            AgentSkill(
+                id='manage-parking-permit',
+                name='Manage a Resident Parking Permit',
+                description='Reports which paid parking zone an address falls into and renews a resident permit.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['parking-permit', 'zones', 'city'],
+                examples=[
+                    'which parking zone is this street in',
+                    'renew my resident permit',
+                ],
+            ),
+            AgentSkill(
+                id='check-municipal-waste-schedule',
+                name='Check the Municipal Waste Schedule',
+                description='Reports the collection days for each waste type at a registered address.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['waste', 'schedule', 'city'],
+                examples=[
+                    'when is the next collection',
+                    'which day is paper collected',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='Smart Home Hub Agent',
+        description='Sub-agent for controlling connected devices in a home.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9154',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='control-heating',
+                name='Control Heating and Thermostat',
+                description='Sets the target temperature per room and switches between heating schedules.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['heating', 'thermostat', 'smart-home'],
+                examples=[
+                    'set the bedroom to 20 degrees',
+                    'turn the heating off until Friday',
+                ],
+            ),
+            AgentSkill(
+                id='control-lighting',
+                name='Control Lighting Scenes',
+                description='Switches lights on and off and applies saved lighting scenes in chosen rooms.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['lighting', 'scenes', 'smart-home'],
+                examples=[
+                    'dim the lights in the living room',
+                    'turn everything off downstairs',
+                ],
+            ),
+            AgentSkill(
+                id='check-indoor-climate',
+                name='Check Indoor Climate',
+                description='Reports indoor temperature and humidity and whether the rooms need airing.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['climate', 'humidity', 'smart-home'],
+                examples=[
+                    'how warm is it inside',
+                    'is the humidity too high in the bedroom',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='Health Records Agent',
+        description='Sub-agent for looking up personal medical records.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9155',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='request-prescription-refill',
+                name='Request a Prescription Refill',
+                description='Checks which prescriptions are running out and requests a repeat from the practice.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['prescription', 'refill', 'records'],
+                examples=[
+                    'I need a repeat prescription',
+                    'which of my medicines are running out',
+                ],
+            ),
+            AgentSkill(
+                id='read-lab-results',
+                name='Read Lab Results',
+                description='Reports the latest laboratory results and marks the values outside the reference range.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['lab-results', 'diagnostics', 'records'],
+                examples=[
+                    'are my blood results back',
+                    'anything abnormal in the last test',
+                ],
+            ),
+            AgentSkill(
+                id='check-vaccination-history',
+                name='Check Vaccination History',
+                description='Reports which vaccinations are on record and which boosters are already due.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['vaccination', 'history', 'records'],
+                examples=[
+                    'when was my last tetanus shot',
+                    'which boosters are due',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='Customer Support Desk Agent',
+        description='Sub-agent for handling incoming customer support requests.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9156',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='triage-support-ticket',
+                name='Triage a Support Ticket',
+                description='Classifies an incoming ticket by topic and urgency and routes it to the right queue.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['support', 'tickets', 'triage'],
+                examples=[
+                    'sort this complaint into a queue',
+                    'how urgent is this ticket',
+                ],
+            ),
+            AgentSkill(
+                id='look-up-order-status',
+                name='Look Up Order Status',
+                description='Reports the current status of a customer order and what is holding it up.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['orders', 'status', 'support'],
+                examples=[
+                    'why has this order not shipped',
+                    'what is happening with order 4471',
+                ],
+            ),
+            AgentSkill(
+                id='escalate-refund-case',
+                name='Escalate a Refund Case',
+                description='Checks whether a refund exceeds the agent limit and escalates the case with a justification.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['refunds', 'escalation', 'support'],
+                examples=[
+                    'this refund needs approval',
+                    'escalate the complaint to a supervisor',
+                ],
+            ),
+        ],
+    ),
+    AgentCard(
+        name='Event Logistics Agent',
+        description='Sub-agent for organising the logistics of company events.',
+        version='1.0.0',
+        default_input_modes=['text/plain'],
+        default_output_modes=['text/plain'],
+        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
+        supported_interfaces=[
+            AgentInterface(
+                protocol_binding='JSONRPC',
+                url='http://127.0.0.1:9157',
+                protocol_version='1.0',
+            )
+        ],
+        skills=[
+            AgentSkill(
+                id='book-event-venue',
+                name='Book an Event Venue',
+                description='Finds venues with the required capacity and equipment on a date and holds the booking.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['venue', 'events', 'booking'],
+                examples=[
+                    'a room for forty people in March',
+                    'a venue with a projector near the office',
+                ],
+            ),
+            AgentSkill(
+                id='order-event-catering',
+                name='Order Event Catering',
+                description='Orders catering for a headcount, taking dietary requirements into account.',
+                input_modes=['text/plain'],
+                output_modes=['text/plain'],
+                tags=['catering', 'events', 'food'],
+                examples=[
+                    'catering for thirty, four vegetarians',
+                    'order lunch for the workshop',
+                ],
+            ),
+        ],
+    ),
+]
