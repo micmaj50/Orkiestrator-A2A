@@ -1,60 +1,22 @@
 import uvicorn
-
+from pathlib import Path
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (
     create_agent_card_routes,
     create_jsonrpc_routes,
 )
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import (
-    AgentCapabilities,
-    AgentCard,
-    AgentInterface,
-    AgentSkill,
-)
-
+from utils.card_loader import load_agent_card
 from config import get_bind_host, get_orchestrator_port, get_orchestrator_url
 from .agent_executor import (
-    OrchestratorExecutor,  # type: ignore[import-untyped]
+    OrchestratorExecutor,
 )
 from starlette.applications import Starlette
 
 
 if __name__ == '__main__':
-    # Define the abilities or functions that agent can perform.
-    skill = AgentSkill(
-        id='orchestate_gas_requests',
-        name='Orchestrate Gas Requests',
-        description='Routes gas station requests to a mocked gas station sub-agent',
-        input_modes=['text/plain'],
-        output_modes=['text/plain'],
-        tags=['orchestator'],
-        examples=['find the closest gas stations'],
-    )
-
-    # Publish metadata that A2A clients use to discover the agent
-    agent_card = AgentCard(
-        name='Gas Search Orchestrator',
-        description='Simple orchestator that routes gas requests to a mocked sub-agent',
-        version='0.0.1',
-        # Default Media Types for the agent's interactions
-        default_input_modes=['text/plain'],
-        default_output_modes=['text/plain'],
-        # Supported A2A features (like streaming or extended config)
-        capabilities=AgentCapabilities(streaming=True, extended_agent_card=True),
-        # Ordered list of endpoints and protocols where the service can be reached
-        supported_interfaces=[
-            AgentInterface(
-                protocol_binding='JSONRPC',
-                # Each agents exposes its A2A interface on a separate local port
-                url=get_orchestrator_url(),
-                protocol_version='1.0',
-            )
-        ],
-        # The list of AgentSkill objects that this agent offers
-        skills=[skill],
-    )
-
+    card_path = Path(__file__).parent / "card.json"
+    agent_card = load_agent_card(card_path, agent_url=get_orchestrator_url())
 
     request_handler = DefaultRequestHandler(
         # Agent executor handles the execution of the client requests
@@ -65,21 +27,11 @@ if __name__ == '__main__':
         agent_card=agent_card,
     )
 
-    # Connect incoming A2A requests to the executor and task store.
-    request_handler = DefaultRequestHandler(
-        agent_executor=OrchestratorExecutor(),
-        # The task_store is used to store and manage tasks
-        task_store=InMemoryTaskStore(),
-        agent_card=agent_card,
-    )
-
     # Creating the routes for the A2A server
     # These routes handle the incoming requests from the clients
     # and the outgoing responses to the clients
     routes = []
-
     routes.extend(create_agent_card_routes(agent_card))
-
     routes.extend(create_jsonrpc_routes(request_handler, '/'))
 
     # Create a web app with the defined routes
