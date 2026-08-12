@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import uvicorn
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (
@@ -10,12 +12,29 @@ from starlette.applications import Starlette
 from agents.parking_agent.agent_card import agent_card
 from config import get_parking_agent_host, get_parking_agent_port
 
-from .agent_executor import ParkingAgentExecutor
+from .agent_executor import (
+    ParkingAgentExecutor,
+    ParkingAgent,
+    MockParkingAgent
+)
 
 if __name__ == '__main__':
+    load_dotenv()
+
+    MOCK_MODE = os.environ.get("MOCK_MODE", "false").lower() == "true"
+
+    if MOCK_MODE:
+        print("Running ParkingAgent in MOCK_MODE")
+        active_agent = MockParkingAgent()
+    else:
+        print("Running ParkingAgent")
+        active_agent = ParkingAgent()
+
+    executor = ParkingAgentExecutor(agent=active_agent)
+
     # Connect incoming A2A requests to the executor and task store.
     request_handler = DefaultRequestHandler(
-        agent_executor=ParkingAgentExecutor(),
+        agent_executor=executor,
         # The task_store is used to store and manage tasks
         task_store=InMemoryTaskStore(),
         agent_card=agent_card,

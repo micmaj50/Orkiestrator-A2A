@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import uvicorn
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (
@@ -10,12 +12,29 @@ from starlette.applications import Starlette
 from agents.weather_agent.agent_card import agent_card
 from config import get_weather_agent_host, get_weather_agent_port
 
-from .agent_executor import WeatherAgentExecutor
+from .agent_executor import (
+    WeatherAgentExecutor,
+    WeatherAgent,
+    MockWeatherAgent
+)
 
 if __name__ == '__main__':
+    load_dotenv()
+
+    MOCK_MODE = os.environ.get("MOCK_MODE", "false").lower() == "true"
+
+    if MOCK_MODE:
+        print("Running WeatherAgent in MOCK_MODE")
+        active_agent = MockWeatherAgent()
+    else:
+        print("Running WeatherAgent")
+        active_agent = WeatherAgent()
+
+    executor = WeatherAgentExecutor(agent=active_agent)
+
     # Connect incoming A2A requests to the executor and task store.
     request_handler = DefaultRequestHandler(
-        agent_executor=WeatherAgentExecutor(),
+        agent_executor=executor,
         task_store=InMemoryTaskStore(),
         agent_card=agent_card,
     )
