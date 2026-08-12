@@ -1,0 +1,33 @@
+{
+  "name": "Food Agent",
+  "description": "Sub-agent for finding food and drink options based on cuisine preference and location constraints.",
+  "version": "1.0.0",
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "capabilities": {
+    "streaming": true,
+    "extended_agent_card": true
+  },
+  "supported_interfaces": [
+    {
+      "protocol_binding": "JSONRPC",
+      "url": "http://127.0.0.1:9997",
+      "protocol_version": "1.0"
+    }
+  ],
+  "skills": [
+    {
+      "id": "find-restaurants-and-dining",
+      "name": "Find Restaurants and Dining Options",
+      "description": "Finds restaurants, cafes, and dining options near the vehicle or a specified location with optional cuisine filters.",
+      "input_modes": ["text/plain"],
+      "output_modes": ["text/plain"],
+      "tags": ["food", "restaurants", "dining", "cuisine"],
+      "examples": [
+        "find some good sushi nearby",
+        "I want to eat pizza in Radom",
+        "find a restaurant near Berlin"
+      ]
+    }
+  ]
+}

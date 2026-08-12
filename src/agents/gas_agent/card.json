@@ -1,0 +1,32 @@
+{
+  "name": "Gas Station Agent",
+  "description": "Sub-agent for geocoding and discovering nearby gas stations.",
+  "version": "1.0.0",
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "capabilities": {
+    "streaming": true,
+    "extended_agent_card": true
+  },
+  "supported_interfaces": [
+    {
+      "protocol_binding": "JSONRPC",
+      "url": "http://127.0.0.1:9998",
+      "protocol_version": "1.0"
+    }
+  ],
+  "skills": [
+    {
+      "id": "find_closest_gas_station",
+      "name": "Find Closest Gas Stations",
+      "description": "Finds the nearest gas stations, using either the car location or a specified location.",
+      "input_modes": ["text/plain"],
+      "output_modes": ["text/plain"],
+      "tags": ["gas-stations"],
+      "examples": [
+        "find the closest gas stations",
+        "find a gas station near Big Ben"
+      ]
+    }
+  ]
+}
