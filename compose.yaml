@@ -6,7 +6,10 @@ services:
       A2A_BIND_HOST: "0.0.0.0"
       GAS_AGENT_HOST: "gas-agent"
       GAS_AGENT_PORT: "${GAS_AGENT_PORT:-9998}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       HERE_API_KEY: "${HERE_API_KEY:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      MOCK_MODE: "${MOCK_MODE:-true}"
 
 
   food_agent:
@@ -17,6 +20,34 @@ services:
       FOOD_AGENT_HOST: "food-agent"
       FOOD_AGENT_PORT: "${FOOD_AGENT_PORT:-9997}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      HERE_API_KEY: "${HERE_API_KEY:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      MOCK_MODE: "${MOCK_MODE:-true}"
+
+
+  parking_agent:
+    build: .
+    command: uv run python -m agents.parking_agent
+    environment:
+      A2A_BIND_HOST: "0.0.0.0"
+      PARKING_AGENT_HOST: "parking-agent"
+      PARKING_AGENT_PORT: "${PARKING_AGENT_PORT:-9996}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      MOCK_MODE: "${MOCK_MODE:-true}"
+
+
+  weather_agent:
+    build: .
+    command: uv run python -m agents.weather_agent
+    environment:
+      A2A_BIND_HOST: "0.0.0.0"
+      WEATHER_AGENT_HOST: "weather-agent"
+      WEATHER_AGENT_PORT: "${WEATHER_AGENT_PORT:-9995}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      WEATHER_API_KEY: "${WEATHER_API_KEY:-}"
+      MOCK_MODE: "${MOCK_MODE:-true}"
+
 
   orchestrator:
     build: .
@@ -33,9 +64,17 @@ services:
       FOOD_AGENT_HOST: "food-agent"
       FOOD_AGENT_PORT: "${FOOD_AGENT_PORT:-9997}"
 
+      PARKING_AGENT_HOST: "parking-agent"
+      PARKING_AGENT_PORT: "${PARKING_AGENT_PORT:-9996}"
+
+      WEATHER_AGENT_HOST: "weather-agent"
+      WEATHER_AGENT_PORT: "${WEATHER_AGENT_PORT:-9995}"
+
     depends_on:
       - gas_agent
       - food_agent
+      - parking_agent
+      - weather_agent
 
   test-client:
     build: .

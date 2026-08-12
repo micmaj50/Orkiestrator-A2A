@@ -27,7 +27,7 @@ class WeatherSearchParams(BaseModel):
         )
     )
     target_location: Optional[str] = Field(
-        default=None, 
+        default=None,
         description=(
             "A specific location provided by the driver (e.g., 'London', 'Warsaw', 'Zakopane'). "
             "Extract ONLY the location name itself. Leave as None if use_current_location is True."
@@ -46,12 +46,12 @@ class WeatherSearchParams(BaseModel):
 async def extract_weather_search_params(driver_command: str) -> WeatherSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
-    
+
     completion = await client.beta.chat.completions.parse(
         model="gpt-4o-mini",
         messages=[
             {
-                "role": "system", 
+                "role": "system",
                 "content": (
                     "You are an NLP analysis module inside an in-car voice assistant system. "
                     "Your sole task is to extract weather search parameters from the driver's spoken command "
@@ -59,7 +59,7 @@ async def extract_weather_search_params(driver_command: str) -> WeatherSearchPar
                 )
             },
             {
-                "role": "user", 
+                "role": "user",
                 "content": driver_command
             }
         ],
@@ -86,14 +86,32 @@ async def fetch_weather_data(query: str, days: int, api_key: str) -> Dict[str, A
         return response.json()
 
 
+class MockWeatherAgent:
+    """Mock version of WeatherAgent for offline testing."""
+
+    @observe(name="mock_weather_agent_invoke")
+    async def invoke(
+        self,
+        user_request: str,
+        car_lat: Optional[float] = None,
+        car_lng: Optional[float] = None,
+        langfuse_trace_id: Optional[str] = None,
+        langfuse_parent_observation_id: Optional[str] = None,
+    ) -> str:
+        return (
+            "[MOCK] Weather in Warszawa: 35.3°C (feels like 33.7°C), thundery outbreaks in nearby. "
+            "Wind: 14.8 km/h, visibility: 9.0 km."
+        )
+
+
 class WeatherAgent:
     """Sub-agent that resolves weather requests for drivers."""
 
     @observe(name="weather_agent_invoke")
     async def invoke(
-        self, 
-        user_request: str, 
-        car_lat: Optional[float] = None, 
+        self,
+        user_request: str,
+        car_lat: Optional[float] = None,
         car_lng: Optional[float] = None,
         langfuse_trace_id: Optional[str] = None,
         langfuse_parent_observation_id: Optional[str] = None,
@@ -103,7 +121,7 @@ class WeatherAgent:
 
             weather_api_key = os.environ.get("WEATHER_API_KEY")
             if not weather_api_key:
-                return self._get_mock_response(search_params)
+                return "Error: WEATHER_API_KEY environment variable is missing on the server."
 
             if search_params.use_current_location:
                 if car_lat is None or car_lng is None:
@@ -121,11 +139,10 @@ class WeatherAgent:
             return f"An error occurred while processing the weather request: {str(e)}"
 
 
-    def _format_weather_response(self, data: Dict[str, Any], requested_days: int = 1, is_mock: bool = False) -> str:
+    def _format_weather_response(self, data: Dict[str, Any], requested_days: int = 1) -> str:
         """Formats weather JSON data into a concise text response tailored for drivers."""
         location = data.get("location", {})
         city_name = location.get("name", "your area")
-        prefix = "[MOCK] " if is_mock else ""
 
         warnings = []
 
@@ -141,7 +158,7 @@ class WeatherAgent:
                 target_day = forecast_days[-1]
                 date_str = target_day.get("date", "upcoming day")
                 day_info = target_day.get("day", {})
-                
+
                 max_temp = day_info.get("maxtemp_c", 0)
                 min_temp = day_info.get("mintemp_c", 0)
                 condition = day_info.get("condition", {}).get("text", "Unknown").lower()
@@ -154,7 +171,7 @@ class WeatherAgent:
                     warnings.append("Caution: Strong winds expected on this day.")
 
                 base_msg = (
-                    f"{prefix}Forecast for {city_name} on {date_str}: {condition} with temperatures "
+                    f"Forecast for {city_name} on {date_str}: {condition} with temperatures "
                     f"between {min_temp}°C and {max_temp}°C. Chance of rain: {chance_of_rain}%."
                 )
 
@@ -175,48 +192,20 @@ class WeatherAgent:
                 warnings.append("Caution: High wind speeds detected.")
 
             base_msg = (
-                    f"{prefix}Weather in {city_name}: {temp_c}°C (feels like {feelslike_c}°C), {condition}. "
+                    f"Weather in {city_name}: {temp_c}°C (feels like {feelslike_c}°C), {condition}. "
                     f"Wind: {wind_kph} km/h, visibility: {vis_km} km."
                 )
 
         if warnings:
             return f"{base_msg} {' '.join(warnings)}"
         return base_msg
-    
-
-    def _get_mock_response(self, search_params: WeatherSearchParams) -> str:
-        """Fallback mock response when WEATHER_API_KEY is missing."""
-        if search_params.use_current_location or not search_params.target_location:
-            location_name = "Warsaw"
-        else:
-            location_name = search_params.target_location.capitalize()
-
-        mock_data = {
-            "location": {"name": location_name},
-            "current": {
-                "temp_c": 18,
-                "feelslike_c": 18,
-                "condition": {"text": "Partly cloudy"},
-                "wind_kph": 14,
-                "vis_km": 10.0,
-                "precip_mm": 0.0,
-            },
-            "forecast": {
-                "forecastday": [
-                    {"date": "today", "day": {"maxtemp_c": 19, "mintemp_c": 11, "condition": {"text": "Partly cloudy"}, "daily_chance_of_rain": 10, "maxwind_kph": 15}},
-                    {"date": "tomorrow", "day": {"maxtemp_c": 2, "mintemp_c": -2, "condition": {"text": "Sleet"}, "daily_chance_of_rain": 80, "maxwind_kph": 55}},
-                    {"date": "in 2 days", "day": {"maxtemp_c": 23, "mintemp_c": 14, "condition": {"text": "Sunny"}, "daily_chance_of_rain": 5, "maxwind_kph": 10}},
-                ]
-            }
-        }
-        return self._format_weather_response(mock_data, requested_days=search_params.days, is_mock=True)
 
 
 class WeatherAgentExecutor(AgentExecutor):
     """Handles incoming A2A requests and executes the weather query flow."""
 
-    def __init__(self) -> None:
-        self.agent = WeatherAgent()
+    def __init__(self, agent: Optional[Any] = None) -> None:
+        self.agent = agent if agent is not None else WeatherAgent()
 
     async def execute(
         self,
@@ -254,8 +243,8 @@ class WeatherAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
 
         task_updater = TaskUpdater(
-            event_queue=event_queue, 
-            task_id=task.id, 
+            event_queue=event_queue,
+            task_id=task.id,
             context_id=task.context_id
         )
         await task_updater.update_status(
@@ -272,8 +261,8 @@ class WeatherAgentExecutor(AgentExecutor):
 
         if query:
             result = await self.agent.invoke(
-                user_request=query, 
-                car_lat=car_lat, 
+                user_request=query,
+                car_lat=car_lat,
                 car_lng=car_lng,
                 langfuse_trace_id=incoming_trace_id,
                 langfuse_parent_observation_id=incoming_parent_id,
@@ -284,7 +273,7 @@ class WeatherAgentExecutor(AgentExecutor):
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result, 
+                    text=result,
                     media_type='text/plain'
                 )
             ]
