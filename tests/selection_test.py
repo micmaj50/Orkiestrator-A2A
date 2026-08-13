@@ -49,12 +49,9 @@ def test_context_groups(context_group):
     result = key_selection.model_dump(mode='json')
 
     target_fields = [val.rsplit(".", maxsplit=1)[-1] for val in context_group.context.fields]
-    result['speed_kmh'] = 67
     expected = {
         name: value if name in target_fields else None
         for name, value in EXPECTED_VALUES.items()
         }
 
     assert result == expected
-
-    
