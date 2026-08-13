@@ -27,7 +27,7 @@ class ParkingSearchParams(BaseModel):
         )
     )
     target_location: Optional[str] = Field(
-        default=None,
+        default=None, 
         description=(
             "A specific location provided by the driver to search parking around. "
             "Can be a city (e.g., 'Kraków'), a street (e.g., 'Floriańska'), "
@@ -37,7 +37,7 @@ class ParkingSearchParams(BaseModel):
         )
     )
     search_radius_meters: int = Field(
-        default=3000,
+        default=3000, 
         description=(
             "The search radius in meters. Convert spoken distance units (e.g., 'within 5km') "
             "to integer meters (5000). Default to 3000 if not specified by the driver."
@@ -48,12 +48,12 @@ class ParkingSearchParams(BaseModel):
 async def extract_parking_search_params(driver_command: str) -> ParkingSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
-
+    
     completion = await client.beta.chat.completions.parse(
         model="gpt-4o-mini",
         messages=[
             {
-                "role": "system",
+                "role": "system", 
                 "content": (
                     "You are an NLP analysis module inside an in-car voice assistant system. "
                     "Your sole task is to extract parking search parameters "
@@ -61,7 +61,7 @@ async def extract_parking_search_params(driver_command: str) -> ParkingSearchPar
                 )
             },
             {
-                "role": "user",
+                "role": "user", 
                 "content": driver_command
             }
         ],
@@ -119,9 +119,9 @@ class MockParkingAgent:
 
     @observe(name="mock_parking_agent_invoke")
     async def invoke(
-        self,
-        user_request: str,
-        car_lat: Optional[float] = None,
+        self, 
+        user_request: str, 
+        car_lat: Optional[float] = None, 
         car_lng: Optional[float] = None,
         langfuse_trace_id: Optional[str] = None,
         langfuse_parent_observation_id: Optional[str] = None,
@@ -141,9 +141,9 @@ class ParkingAgent:
 
     @observe(name="parking_agent_invoke")
     async def invoke(
-        self,
-        user_request: str,
-        car_lat: Optional[float] = None,
+        self, 
+        user_request: str, 
+        car_lat: Optional[float] = None, 
         car_lng: Optional[float] = None,
         langfuse_trace_id: Optional[str] = None,
         langfuse_parent_observation_id: Optional[str] = None,
@@ -229,7 +229,7 @@ class ParkingAgentExecutor(AgentExecutor):
                 incoming_trace_id = str(val_trace)
             if val_parent is not None:
                 incoming_parent_id = str(val_parent)
-
+        
         # Reuse the current task or create one for a new request
         if context.current_task:
             task = context.current_task
@@ -239,8 +239,8 @@ class ParkingAgentExecutor(AgentExecutor):
 
         # Mark the task as working in EventQueue
         task_updater = TaskUpdater(
-            event_queue=event_queue,
-            task_id=task.id,
+            event_queue=event_queue, 
+            task_id=task.id, 
             context_id=task.context_id
         )
         await task_updater.update_status(
@@ -250,7 +250,7 @@ class ParkingAgentExecutor(AgentExecutor):
 
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
-
+        
         # Change this if the Orchestrator sends car GPS in a different field.
         # Currently defaults to Warsaw Center coordinates as a fallback mock.
         car_lat = getattr(context, 'car_lat', 52.2297)
@@ -258,8 +258,8 @@ class ParkingAgentExecutor(AgentExecutor):
 
         if query:
             result = await self.agent.invoke(
-                user_request=query,
-                car_lat=car_lat,
+                user_request=query, 
+                car_lat=car_lat, 
                 car_lng=car_lng,
                 langfuse_trace_id=incoming_trace_id,
                 langfuse_parent_observation_id=incoming_parent_id
@@ -271,7 +271,7 @@ class ParkingAgentExecutor(AgentExecutor):
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result,
+                    text=result, 
                     media_type='text/plain'
                 )
             ]

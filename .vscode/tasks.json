@@ -2,6 +2,27 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Run unified server",
+            "type": "process",
+            "command": "uv",
+            "args": [
+                "run",
+                "--env-file",
+                ".env",
+                "python",
+                "-m",
+                "src.server.main"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "Run orchestrator",
             "type": "process",
             "command": "uv",

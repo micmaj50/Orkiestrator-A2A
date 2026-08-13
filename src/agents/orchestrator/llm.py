@@ -23,7 +23,7 @@ class Llm:
         executes a merged prompt
 
 
-
+        
         Parameters
         ----------
         prompt : BasePromptTemplate
@@ -31,7 +31,7 @@ class Llm:
         inputs : dict[str, Any]
             A dictionary containing the keys and values to format into the template.
         asJSON : bool
-            A flag indicating whether to parse and return the output as a dictionary (True)
+            A flag indicating whether to parse and return the output as a dictionary (True) 
             or as a plain string (False).
 
         Returns

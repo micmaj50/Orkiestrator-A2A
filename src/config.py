@@ -1,6 +1,10 @@
 import os
 
+# Default settings for Single App mode
+DEFAULT_SERVER_HOST = "127.0.0.1"
+DEFAULT_SERVER_PORT = 8000
 
+# Default settings for Standalone mode
 DEFAULT_BIND_HOST = "127.0.0.1"
 
 DEFAULT_ORCHESTRATOR_HOST = "127.0.0.1"
@@ -19,8 +23,22 @@ DEFAULT_WEATHER_AGENT_HOST = "127.0.0.1"
 DEFAULT_WEATHER_AGENT_PORT = 9995
 
 
+def is_single_app_mode() -> bool:
+    """Check whether the application is running as a single Starlette app."""
+    return os.getenv("SINGLE_APP_MODE", "false").lower() == "true"
+
+
+def get_server_host() -> str:
+    return os.getenv("SERVER_HOST", DEFAULT_SERVER_HOST)
+
+
+def get_server_port() -> int:
+    return int(os.getenv("SERVER_PORT", str(DEFAULT_SERVER_PORT)))
+
+
 def get_bind_host() -> str:
     return os.getenv("A2A_BIND_HOST", DEFAULT_BIND_HOST)
+
 
 
 def get_orchestrator_host() -> str:
@@ -32,10 +50,9 @@ def get_orchestrator_port() -> int:
 
 
 def get_orchestrator_url() -> str:
-    return (
-            f"http://{get_orchestrator_host()}:"
-            f"{get_orchestrator_port()}"
-    )
+    if is_single_app_mode():
+        return f"http://{get_server_host()}:{get_server_port()}/orchestrator/"
+    return f"http://{get_orchestrator_host()}:{get_orchestrator_port()}"
 
 
 
@@ -48,10 +65,9 @@ def get_gas_agent_port() -> int:
 
 
 def get_gas_agent_url() -> str:
-    return (
-            f"http://{get_gas_agent_host()}:"
-            f"{get_gas_agent_port()}"
-    )
+    if is_single_app_mode():
+        return f"http://{get_server_host()}:{get_server_port()}/gas/"
+    return f"http://{get_gas_agent_host()}:{get_gas_agent_port()}"
 
 
 
@@ -64,10 +80,9 @@ def get_food_agent_port() -> int:
 
 
 def get_food_agent_url() -> str:
-    return (
-            f"http://{get_food_agent_host()}:"
-            f"{get_food_agent_port()}"
-    )
+    if is_single_app_mode():
+        return f"http://{get_server_host()}:{get_server_port()}/food/"
+    return f"http://{get_food_agent_host()}:{get_food_agent_port()}"
 
 
 
@@ -80,10 +95,9 @@ def get_parking_agent_port() -> int:
 
 
 def get_parking_agent_url() -> str:
-    return (
-            f"http://{get_parking_agent_host()}:"
-            f"{get_parking_agent_port()}"
-    )
+    if is_single_app_mode():
+        return f"http://{get_server_host()}:{get_server_port()}/parking/"
+    return f"http://{get_parking_agent_host()}:{get_parking_agent_port()}"
 
 
 
@@ -96,7 +110,6 @@ def get_weather_agent_port() -> int:
 
 
 def get_weather_agent_url() -> str:
-    return (
-            f"http://{get_weather_agent_host()}:"
-            f"{get_weather_agent_port()}"
-    )
+    if is_single_app_mode():
+        return f"http://{get_server_host()}:{get_server_port()}/weather/"
+    return f"http://{get_weather_agent_host()}:{get_weather_agent_port()}"

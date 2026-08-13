@@ -1,9 +1,14 @@
 ENV_FILE ?= .env
 UV_RUN := uv run --env-file $(ENV_FILE)
 
-.PHONY: run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client \
+.PHONY: run-server run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client test-integration \
 	docker-config docker-build docker-up docker-up-build docker-build-no-cache docker-ps docker-logs docker-client docker-down docker-smoke
 
+# unified server mode
+run-server:
+	$(UV_RUN) python -m src.server.main
+
+# standalone mode
 run-orchestrator:
 	$(UV_RUN) python -m agents.orchestrator
 
