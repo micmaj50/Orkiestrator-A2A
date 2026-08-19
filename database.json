@@ -1,0 +1,45 @@
+[
+
+  {
+
+    "id": 1,
+
+      "agent_id": 1,
+
+      "agent_name": "gas_agent",
+
+      "agent_url": "https://api.example.com/gas",
+
+      "keywords": "fuel, gas, station",
+
+      "descryption": "Finds nearest gas stations and prices",
+
+      "sklills": ["find_gas_station", "get_fuel_prices"],
+
+    "text_to_embed": "Agent Role: Gas Search Orchestrator\nSkill: find_gas_station\nDescription: Routes gas station requests"
+
+  },
+
+  {
+
+    "id": 2,
+
+ 
+
+      "agent_id": 2,
+
+      "agent_name": "weather_agent",
+
+      "agent_url": "https://api.example.com/weather",
+
+      "keywords": "weather, forecast, rain",
+
+      "descryption": "Provides weather forecasts for specified locations",
+
+      "sklills": ["get_forecast", "check_rain"],
+
+    "text_to_embed": "Agent Role: Weather Assistant\nSkill: get_forecast\nDescription: Returns weather forecast for location"
+
+  }
+
+]

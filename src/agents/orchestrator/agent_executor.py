@@ -1,4 +1,3 @@
-from langchain_core.messages import HumanMessage
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.helpers import (
@@ -11,23 +10,26 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Role, SendMessageRequest, TaskState
-from utils.a2a_response import extract_artifact_text
-from langfuse import observe, get_client
+from langchain_core.messages import HumanMessage
+from langfuse import get_client, observe
 
 from agents.graph import graph
 from agents.state import GraphState
+from utils.a2a_response import extract_artifact_text
 
 
 class Orchestrator:
     """Orchestrator backed by the LangGraph multi-agent graph."""
 
     @observe(name="orchestrator_invoke")
-    async def invoke(self, user_request: str) -> str:
+    async def invoke(self, user_request: str, thread_id: str) -> str:
         state = GraphState(user_input=HumanMessage(content=user_request))
+
+        config = {"configurable": {"thread_id": thread_id}}
 
         # graph.ainvoke returns the final state as a dict-like mapping
         # (channel name -> value) for a pydantic state schema.
-        result = await graph.ainvoke(state)
+        result = await graph.ainvoke(state, config)
 
         if isinstance(result, GraphState):
             messages = result.messages
@@ -51,7 +53,7 @@ class Orchestrator:
         client_lf = get_client()
         current_trace_id = client_lf.get_current_trace_id()
         current_span_id = client_lf.get_current_observation_id()
-         
+
         # Resolve the agent card to discover its A2A interface and capabilities
         async with httpx.AsyncClient() as httpx_client:
             resolver = A2ACardResolver(
@@ -73,13 +75,13 @@ class Orchestrator:
                     user_request,
                     role=Role.ROLE_USER,
                     )
-            
+
             if current_trace_id:
                 trace_data = {
                     "langfuse_trace_id": current_trace_id,
                     "langfuse_parent_observation_id": current_span_id or "",
                 }
-                
+
                 if message.metadata is None:
                     message.metadata = {}
 
@@ -127,7 +129,7 @@ class Orchestrator:
 
 class OrchestratorExecutor(AgentExecutor):
     """A2A executor for the orchestrator"""
-    
+
     def __init__(self) -> None:
         self.agent = Orchestrator()
 
@@ -163,7 +165,8 @@ class OrchestratorExecutor(AgentExecutor):
         # 3. Extract the user's text and pass it to the orchestrator graph
         query = get_message_text(context.message)
         if query:
-            result = await self.agent.invoke(user_request=query)
+            thread_id = task.context_id or "default_thread"
+            result = await self.agent.invoke(user_request=query, thread_id=thread_id)
         else:
             result = 'No text input is provided!'
 
