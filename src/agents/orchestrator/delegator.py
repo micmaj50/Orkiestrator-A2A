@@ -83,7 +83,7 @@ class Delegator:
 
         inputs={
             "USER_INPUT": state.user_input.content,
-            "CONVERSATION_STORY": state.messages[-10],
+            "CONVERSATION_STORY": state.messages[-10:],
             "CAR_DATA": carData, #todo
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
       #      "AGENT_CARD": agentCard
