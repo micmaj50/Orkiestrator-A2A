@@ -19,7 +19,7 @@ async def chat_loop() -> None:
     print("Type 'exit' or 'quit' to finish.\n")
 
     # Resolve the agent card to discover its A2A interface and capabilities
-    async with httpx.AsyncClient(timeout=15.0) as httpx_client:
+    async with httpx.AsyncClient(timeout=120.0) as httpx_client:
         resolver = A2ACardResolver(
                 httpx_client=httpx_client,
                 base_url=ORCHESTRATOR_URL,

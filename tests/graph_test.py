@@ -2,6 +2,7 @@
 """
 
 import asyncio
+import uuid
 
 import pytest
 from langchain_core.messages import HumanMessage
@@ -76,8 +77,9 @@ def run_flow(monkeypatch):
         state = GraphState(
             user_input=HumanMessage(content=user_request),
             messages=[HumanMessage(content=user_request)],
+            tasks=[],
             )
-        config = {"configurable": {"thread_id": "test"}}
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         return asyncio.run(graph.ainvoke(state, config)), llm, sub_agents
 
     return _run

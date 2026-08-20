@@ -28,6 +28,7 @@ class Orchestrator:
         state = GraphState(
             user_input=user_msg,
             messages=[user_msg],
+            tasks=[],
             )
 
         config = {"configurable": {"thread_id": thread_id}}

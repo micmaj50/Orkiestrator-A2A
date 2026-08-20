@@ -1,6 +1,7 @@
 from typing import Any
 
 from a2a.types import AgentCard
+from langchain_core.messages import get_buffer_string
 from langchain_core.prompts import PromptTemplate
 
 from agents.orchestrator.llm import Llm
@@ -34,6 +35,7 @@ Review the current user input against the conversation history and active tasks 
 
 1. EVALUATE: Is there an active task in progress (e.g., waiting for food preparation or fuel status)? Check the status in active tasks.
 2. DELEGATE: If the user requires something from the Gas Station (EV/Fuel status) or Food Point (menu/ordering) that is not yet handled, generate a new task payload.
+3. RESOLVE CONTEXT: When generating task queries, resolve ALL contextual references (e.g., "there", "that place", "it") using the conversation history. Sub-agents have NO access to conversation history, so each query MUST be fully self-contained and explicit. For example, if the user previously asked about Katowice and now asks "What about gas stations there?", the query must be "gas stations in Katowice", NOT "gas stations there".
 ---
 You must respond strictly in JSON format. Return only task. Here is he form:
 
@@ -41,7 +43,7 @@ You must respond strictly in JSON format. Return only task. Here is he form:
     "tasks":[
     {{
         "id": "int",
-        "query": "string",
+        "query": "A fully self-contained query with all references resolved from conversation history",
         "status": "in_progress",
         "assigned_agent": (choose one agent from AgentCard),
         "result": null,
@@ -83,7 +85,7 @@ class Delegator:
 
         inputs={
             "USER_INPUT": state.user_input.content,
-            "CONVERSATION_STORY": state.messages[-10:],
+            "CONVERSATION_STORY": get_buffer_string(state.messages[-10:]),
             "CAR_DATA": carData, #todo
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
       #      "AGENT_CARD": agentCard

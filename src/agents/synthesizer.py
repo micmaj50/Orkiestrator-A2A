@@ -1,3 +1,4 @@
+from langchain_core.messages import get_buffer_string
 from langchain_core.prompts import PromptTemplate
 
 from agents.orchestrator.llm import Llm
@@ -10,8 +11,12 @@ class Synthesizer:
 
         self.template_string = """
         You are a synthesis agent. Combine the data from our agents into a simple summary for a human.
+        Use the conversation history to understand context (e.g., what "there" or "that place" refers to).
 
-        ORIGINAL HUMAN REQUEST:
+        CONVERSATION HISTORY:
+        {conversation_history}
+
+        CURRENT USER REQUEST:
         {user_request}
 
         AGENT OUTPUTS:
@@ -19,7 +24,7 @@ class Synthesizer:
         """
 
         self.prompt_template = PromptTemplate(
-            input_variables=["user_request", "agent_answers"],
+            input_variables=["conversation_history", "user_request", "agent_answers"],
             template=self.template_string
         )
 
@@ -34,9 +39,12 @@ class Synthesizer:
             for task in state.tasks if task.result
         )
 
+        conversation_history = get_buffer_string(state.messages[-10:])
+
         final_response = llm(
             prompt=self.prompt_template,
             inputs={
+                "conversation_history": conversation_history,
                 "user_request": request,
                 "agent_answers": answers,
             },
