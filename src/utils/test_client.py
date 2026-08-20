@@ -65,6 +65,8 @@ async def chat_loop() -> None:
                     print('\n === FINAL ANSWER===')
                     if artifact_text:
                         print(artifact_text)
+                    else: 
+                        print('No artifact text returned by orchestrator')
                 print('\n')
 
         finally:

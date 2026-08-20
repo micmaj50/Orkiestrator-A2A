@@ -31,8 +31,6 @@ def get_qdrant_client(path: str) -> QdrantClient:
         upload_agents_from_file(qdrant_client, path)
     return qdrant_client
 
-AGENT_NODE = 'agent_node'
-SYNTHESIZER_NODE = 'response_synthesizer'
 
 def agent_url(card: AgentCard) -> str:
     """Where the agent listens."""
