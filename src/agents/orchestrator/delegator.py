@@ -1,15 +1,10 @@
 from typing import Any
 
-from langchain_core.prompts import PromptTemplate
-from agents.orchestrator.llm import Llm
-from agents.state import GraphState,Task
 from a2a.types import AgentCard
-from a2a.types import (
-    AgentCapabilities,
-    AgentCard,
-    AgentInterface,
-    AgentSkill,
-)
+from langchain_core.prompts import PromptTemplate
+
+from agents.orchestrator.llm import Llm
+from agents.state import GraphState, Task
 
 question_prompt = PromptTemplate.from_template("""
 
@@ -20,15 +15,15 @@ You are the  Orchestrator running in a LangGraph workflow. Your job is to analyz
 ---
 The current session metrics and history extracted from the graph state:
 
-* Active User Input: 
+* Active User Input:
 "{USER_INPUT}"
 
-* Conversation History (Chronological): 
+* Conversation History (Chronological):
 {CONVERSATION_STORY}
 
 * Active Tasks
 {ACTIVE_TASKS}
-                                                
+
 * Current Car Data:
 {CAR_DATA}
 
@@ -41,9 +36,9 @@ Review the current user input against the conversation history and active tasks 
 2. DELEGATE: If the user requires something from the Gas Station (EV/Fuel status) or Food Point (menu/ordering) that is not yet handled, generate a new task payload.
 ---
 You must respond strictly in JSON format. Return only task. Here is he form:
-                                         
-{{ 
-    "tasks":[                                            
+
+{{
+    "tasks":[
     {{
         "id": "int",
         "query": "string",
@@ -54,7 +49,7 @@ You must respond strictly in JSON format. Return only task. Here is he form:
     }}
     ]
 }}
-                                                
+
 
 """)
 
@@ -68,7 +63,7 @@ class Delegator:
 
 
 
-    
+
     #converts Task to string
     def tasksToString(self,task: Task):
         taskDict = {
@@ -87,11 +82,10 @@ class Delegator:
       # agentCard = self.cardToString()
 
         inputs={
-            "USER_INPUT": state.user_input.content,                  
-            "CONVERSATION_STORY": state.messages,
-            "CAR_DATA": carData, #todo 
+            "USER_INPUT": state.user_input.content,
+            "CONVERSATION_STORY": state.messages[-10],
+            "CAR_DATA": carData, #todo
             "ACTIVE_TASKS": "\n".join([self.tasksToString(task) for task in state.tasks]),
-      #      "AGENT_CARD": agentCard                
+      #      "AGENT_CARD": agentCard
         }
         return self.Llm(question_prompt,inputs,True)
-

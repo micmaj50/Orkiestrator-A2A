@@ -1,19 +1,17 @@
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import get_buffer_string
 
-from agents.state import GraphState
 from agents.orchestrator.llm import Llm
+from agents.state import GraphState
+
 
 class Synthesizer:
     def __init__(self):
         self.responses: list[str | dict] = []
 
         self.template_string = """
-        You are a synthesis agent.
-        From agent outputs only information asked for in user request and combine into a simple summary for a human.
-        Do not omitt details from the data.
+        You are a synthesis agent. Combine the data from our agents into a simple summary for a human.
 
-        USER REQUEST:
+        ORIGINAL HUMAN REQUEST:
         {user_request}
 
         AGENT OUTPUTS:
@@ -31,7 +29,10 @@ class Synthesizer:
         else:
             request = str(state.user_input.content)
 
-        answers = get_buffer_string(state.messages)
+        answers = "\n".join(
+            f"Result from {task.assigned_agent}: {task.result}"
+            for task in state.tasks if task.result
+        )
 
         final_response = llm(
             prompt=self.prompt_template,
@@ -45,4 +46,3 @@ class Synthesizer:
         self.responses.append(final_response)
 
         return final_response
-    
