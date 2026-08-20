@@ -69,10 +69,23 @@ def run_flow(monkeypatch):
         llm = FakeLlm(tasks)
         sub_agents = FakeSubAgents(broken_url)
 
+        # Build query→agent mapping so search_skill returns the delegator's
+        # assignment without loading the real embedding model.
+        query_to_agent = {}
+        for t in tasks:
+            q = t.get('query', '')
+            query_to_agent[str(q)] = t.get('assigned_agent')
+
+        def fake_search_skill(_client, query_text):
+            return query_to_agent.get(str(query_text))
+
         monkeypatch.setattr(graph_module, 'llm', llm)
         # A module-level singleton, so it is rebuilt with the fake LLM.
         monkeypatch.setattr(graph_module, 'delegator', None)
         monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agents)
+        monkeypatch.setattr(graph_module, 'search_skill', fake_search_skill)
+        # Prevent get_qdrant_client from loading the real embedding model.
+        monkeypatch.setattr(graph_module, 'qdrant_client', object())
 
         state = GraphState(
             user_input=HumanMessage(content=user_request),
@@ -168,7 +181,8 @@ def test_flow_without_routable_tasks_returns_the_fallback(run_flow, tasks):
 
     result, llm, sub_agents = run_flow('Fly me to the moon', tasks)
 
-    assert result['tasks'] == []
+    # Tasks may be created but never executed (unknown agent not in SUB_AGENT_CARDS).
+    assert not any(t.result for t in result['tasks'])
     assert sub_agents.calls == []
     assert llm.synthesizer_inputs is None
     assert result['messages'][-1].content.startswith(FALLBACK)
