@@ -1,6 +1,5 @@
 import asyncio
 import sys
-import uuid
 
 import httpx
 
@@ -13,12 +12,9 @@ from config import get_orchestrator_url
 
 ORCHESTRATOR_URL = get_orchestrator_url()
 
-async def chat_loop() -> None:
-    # 1. Generujemy stałe ID sesji dla tego klienta (naśladuje logowanie/sesję)
-    session_id = str(uuid.uuid4())
-    print(f"--- Uruchomiono klienta (ID Sesji: {session_id}) ---")
-    print("Wpisz 'exit' lub 'quit' aby zakończyć.\n")
 
+async def send_message(text_query: str) -> None:
+    # Resolve the agent card to discover its A2A interface and capabilities
     async with httpx.AsyncClient(timeout=15.0) as httpx_client:
         resolver = A2ACardResolver(
                 httpx_client=httpx_client,
@@ -26,53 +22,54 @@ async def chat_loop() -> None:
                 )
         orchestrator_card = await resolver.get_agent_card()
 
+        # Create an A2A client from the card using the default client configuration
         client_config = ClientConfig(
             streaming=False,
             httpx_client=httpx_client,
             )
-
+        
         client = await create_client(
             agent=orchestrator_card,
             client_config=client_config,
         )
 
         try:
-            while True:
-                # 2. Pobieramy input w pętli (nie wyłączamy klienta)
-                question = await asyncio.to_thread(input, 'user > ')
-                question = question.strip()
+            # Build and send the request as an A2A user message
+            message = new_text_message(
+                    text_query,
+                    role=Role.ROLE_USER,
+                    )
+            request = SendMessageRequest(message=message)
 
-                if not question:
-                    continue
-                if question.lower() in ['exit', 'quit']:
-                    break
+            # Iterate over the response chunks and display each one and its extracted artifact text for comparison
+            async for chunk in client.send_message(request):
+                print('\n === RAW A2A RESPONSE ===')
+                print(chunk)
 
-                # 3. Budujemy wiadomość i wstrzykujemy nasze ID sesji
-                message = new_text_message(
-                        question,
-                        role=Role.ROLE_USER,
-                        )
-                message.context_id = session_id  # <--- To połączy konwersację na serwerze!
-
-                request = SendMessageRequest(message=message)
-
-                print('\n === ODPOWIEDŹ ORCHESTRATORA ===')
-                async for chunk in client.send_message(request):
-                    artifact_text = extract_artifact_text(chunk)
-                    if artifact_text:
-                        print(artifact_text)
-                print('\n')
+                artifact_text = extract_artifact_text(chunk)
+                print('\n === FINAL ANSWER===')
+                if artifact_text:
+                    print(artifact_text)
+                else:
+                    print('No artifact text returned by orchestrator')
 
         finally:
             await client.close()
 
+def get_question_from_cli() -> str:
+    if len(sys.argv) > 1:
+        return ' '.join(sys.argv[1:])
+
+    return input('user > ').strip()
 
 def main() -> None:
-    try:
-        asyncio.run(chat_loop())
-    except KeyboardInterrupt:
-        print("\nZakończono klienta.")
+    question = get_question_from_cli()
 
+    if not question:
+        print('No question provided')
+        return
+
+    asyncio.run(send_message(question))
 
 if __name__ == '__main__':
     main()

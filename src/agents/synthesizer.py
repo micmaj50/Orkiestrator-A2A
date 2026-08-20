@@ -9,9 +9,11 @@ class Synthesizer:
         self.responses: list[str | dict] = []
 
         self.template_string = """
-        You are a synthesis agent. Combine the data from our agents into a simple summary for a human.
+        You are a synthesis agent.
+        From agent outputs only information asked for in user request and combine into a simple summary for a human.
+        Do not omitt details from the data.
 
-        ORIGINAL HUMAN REQUEST:
+        USER REQUEST:
         {user_request}
 
         AGENT OUTPUTS:
