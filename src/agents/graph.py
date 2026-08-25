@@ -17,6 +17,7 @@ from utils.database import search_skill, upload_agents_from_file
 
 AGENT_NODE = 'agent_node'
 SYNTHESIZER_NODE = 'response_synthesizer'
+ASK_USER_NODE = 'ask_user_node'
 
 llm: Llm | None = None
 delegator: Delegator | None = None
@@ -141,7 +142,7 @@ async def agent_node(state: GraphState) -> dict:
                 task.result = f'{card.name} call failed: {exc}'
 
             output: dict = {'tasks': state.tasks}
-            if task.result:
+            if task.result and task.status != TaskStatus.NEED_CONTEXT:
                 # Publish the result on messages so the synthesizer can read it.
                 output['messages'] = [AIMessage(content=task.result)]
             return output
@@ -174,12 +175,26 @@ async def response_synthesizer_node(state: GraphState) -> dict:
     return {'messages': [AIMessage(content=final_text)]}
 
 
+def check_if_need_context_exist(state: GraphState) -> str:
+    """After synthesis, check if any task needs more context."""
+    for task in state.tasks:
+        if task.status == TaskStatus.NEED_CONTEXT:
+            return ASK_USER_NODE
+    return END
+
+
+async def ask_user_node(state: GraphState) -> dict:
+    """Placeholder: will ask the user for missing context in the future."""
+    # TODO: implement context clarification logic
+    return {}
+
 
 graph_builder = StateGraph(GraphState)
 
 graph_builder.add_node('orchestrator', orchestrator_node)
 graph_builder.add_node(AGENT_NODE, agent_node)
 graph_builder.add_node(SYNTHESIZER_NODE, response_synthesizer_node)
+graph_builder.add_node(ASK_USER_NODE, ask_user_node)
 
 graph_builder.add_edge(START, 'orchestrator')
 graph_builder.add_conditional_edges('orchestrator', route_from_orchestrator, {
@@ -187,6 +202,10 @@ graph_builder.add_conditional_edges('orchestrator', route_from_orchestrator, {
     SYNTHESIZER_NODE: SYNTHESIZER_NODE,
 })
 graph_builder.add_edge(AGENT_NODE, 'orchestrator')
-graph_builder.add_edge(SYNTHESIZER_NODE, END)
+graph_builder.add_conditional_edges(SYNTHESIZER_NODE, check_if_need_context_exist, {
+    ASK_USER_NODE: ASK_USER_NODE,
+    END: END,
+})
+graph_builder.add_edge(ASK_USER_NODE, END)
 
 graph = graph_builder.compile()
