@@ -1,6 +1,6 @@
 import pytest
 from context.context_selection import ContextKey
-from contracts.agent_request import resolve_agent_context
+from context.agent_context import AgentContext
 from context.car import VehicleProfile, VehicleTelemetry, CarContext
 from context.context_groups import CONTEXT_GROUPS
 from common.fuel import FuelType
@@ -37,7 +37,7 @@ EXPECTED_VALUES = vp.model_dump(mode='json') | vt.model_dump(mode='json')
 
 @pytest.mark.parametrize("context_key", list(ContextKey))
 def test_context_keys(context_key):
-    key_selection = resolve_agent_context(car_context=car_context, selection=ContextSelection(fields=[context_key]))
+    key_selection = AgentContext.select_from_car_context(car_context=car_context, selection=ContextSelection(fields=[context_key]))
     result = key_selection.model_dump(mode='json')
 
     target_field = context_key.rsplit(".", maxsplit=1)[-1]
@@ -45,7 +45,7 @@ def test_context_keys(context_key):
 
 @pytest.mark.parametrize("context_group", CONTEXT_GROUPS)
 def test_context_groups(context_group):
-    key_selection = resolve_agent_context(car_context=car_context, selection=context_group.context)
+    key_selection = AgentContext.select_from_car_context(car_context=car_context, selection=context_group.context)
     result = key_selection.model_dump(mode='json')
 
     target_fields = [val.rsplit(".", maxsplit=1)[-1] for val in context_group.context.fields]
