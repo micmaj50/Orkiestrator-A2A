@@ -1,8 +1,7 @@
-import multiprocess
 from a2a.types import AgentCard
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
-from qdrant_client import QdrantClient
+import multiprocess
 
 from agents.food_agent.agent_card import agent_card as food_agent_card
 from agents.gas_agent.agent_card import agent_card as gas_agent_card
@@ -12,7 +11,14 @@ from agents.parking_agent.agent_card import agent_card as parking_agent_card
 from agents.state import GraphState, Task, TaskStatus
 from agents.synthesizer import Synthesizer
 from agents.weather_agent.agent_card import agent_card as weather_agent_card
+from config import (
+    get_food_agent_url,
+    get_gas_agent_url,
+    get_parking_agent_url,
+    get_weather_agent_url,
+)
 from utils.a2a_client import call_sub_agent
+from qdrant_client import QdrantClient
 from utils.database import search_skill, upload_agents_from_file
 
 AGENT_NODE = 'agent_node'
@@ -31,15 +37,9 @@ def get_qdrant_client(path: str) -> QdrantClient:
         upload_agents_from_file(qdrant_client, path)
     return qdrant_client
 
-AGENT_NODE = 'agent_node'
-SYNTHESIZER_NODE = 'response_synthesizer'
-
 def agent_url(card: AgentCard) -> str:
     """Where the agent listens."""
-
     return card.supported_interfaces[0].url
-
-
 
 def _safe_del(self):
     try:
@@ -101,12 +101,7 @@ async def orchestrator_node(state: GraphState) -> dict:
                 query=item.get('query'),
             )
 
-
-
         tasks.append(new_task)
-
-
-
     return {'tasks': tasks}
 
 
@@ -153,14 +148,18 @@ async def agent_node(state: GraphState) -> dict:
 async def response_synthesizer_node(state: GraphState) -> dict:
     """
     Response synthesizer node that asks the LLM (Synthesizer) to combine the
-    sub-agent only COMPLETED and FAILED task results into a final message.
+    sub-agent results into a final message.
     """
 
     global llm
 
-    valid_tasks = [t for t in state.tasks if t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)]
+    has_results = False
+    for task in state.tasks:
+        if task.result:
+            has_results = True
+            break
 
-    if not valid_tasks:
+    if not has_results:
         message = "I couldn't handle that request. Please try again or ask for something else."
         return {'messages': [AIMessage(content=message)]}
 
@@ -206,6 +205,6 @@ graph_builder.add_conditional_edges(SYNTHESIZER_NODE, check_if_need_context_exis
     ASK_USER_NODE: ASK_USER_NODE,
     END: END,
 })
-graph_builder.add_edge(ASK_USER_NODE, END)
+graph_builder.add_edge(ASK_USER_NODE, 'orchestrator')
 
 graph = graph_builder.compile()
