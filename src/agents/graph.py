@@ -200,11 +200,14 @@ graph_builder.add_conditional_edges('orchestrator', route_from_orchestrator, {
     AGENT_NODE: AGENT_NODE,
     SYNTHESIZER_NODE: SYNTHESIZER_NODE,
 })
+
 graph_builder.add_edge(AGENT_NODE, 'orchestrator')
 graph_builder.add_conditional_edges(SYNTHESIZER_NODE, check_if_need_context_exist, {
     ASK_USER_NODE: ASK_USER_NODE,
     END: END,
 })
+
 graph_builder.add_edge(ASK_USER_NODE, 'orchestrator')
+graph_builder.add_edge(SYNTHESIZER_NODE, END)
 
 graph = graph_builder.compile()
