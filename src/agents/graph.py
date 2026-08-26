@@ -8,7 +8,7 @@ from agents.gas_agent.agent_card import agent_card as gas_agent_card
 from agents.orchestrator.delegator import Delegator
 from agents.orchestrator.llm import Llm
 from agents.parking_agent.agent_card import agent_card as parking_agent_card
-from agents.state import GraphState, Task, TaskStatus
+from agents.state import GraphState, WorkItem, WorkItemStatus
 from agents.synthesizer import Synthesizer
 from agents.weather_agent.agent_card import agent_card as weather_agent_card
 from config import (
@@ -84,7 +84,7 @@ async def orchestrator_node(state: GraphState) -> dict:
     else:
         items = []
 
-    tasks: list[Task] = []
+    tasks: list[WorkItem] = []
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             continue
@@ -100,7 +100,7 @@ async def orchestrator_node(state: GraphState) -> dict:
         matched_agents = search_skill(qdrant_client, query_text=str(query))
         agent = matched_agents
 
-        new_task = Task(
+        new_task = WorkItem(
                 id=task_id,
                 assigned_agent=agent,
                 query=item.get('query'),
@@ -119,7 +119,7 @@ def route_from_orchestrator(state: GraphState) -> str:
     """Keep visiting the shared agent node while any task is still pending."""
     
     for task in state.tasks:
-        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent in SUB_AGENT_CARDS:
+        if task.status == WorkItemStatus.IN_PROGRESS and task.assigned_agent in SUB_AGENT_CARDS:
             return AGENT_NODE
         
     return SYNTHESIZER_NODE
@@ -132,18 +132,18 @@ async def agent_node(state: GraphState) -> dict:
     """
 
     for task in state.tasks:
-        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent in SUB_AGENT_CARDS:
+        if task.status == WorkItemStatus.IN_PROGRESS and task.assigned_agent in SUB_AGENT_CARDS:
             card = SUB_AGENT_CARDS[task.assigned_agent]
 
             try:
                 query = task.query or str(state.user_input.content)
                 result = await call_sub_agent(query, agent_url(card))
 
-                task.status = TaskStatus.COMPLETED
+                task.status = WorkItemStatus.COMPLETED
                 task.result = result
 
             except Exception as exc:
-                task.status = TaskStatus.FAILED
+                task.status = WorkItemStatus.FAILED
                 task.result = f'{card.name} call failed: {exc}'
 
             output: dict = {'tasks': state.tasks}

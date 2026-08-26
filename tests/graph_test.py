@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 
 from agents import graph as graph_module
 from agents.graph import graph, route_from_orchestrator
-from agents.state import GraphState, Task, TaskStatus
+from agents.state import GraphState, WorkItem, WorkItemStatus
 from config import (
     get_food_agent_url,
     get_gas_agent_url,
@@ -95,7 +95,7 @@ def test_flow_fans_out_to_two_agents_and_synthesizes(run_flow):
         ('gas station in Radom', get_gas_agent_url()),
         ('weather in Radom', get_weather_agent_url()),
     ]
-    assert all(task.status == TaskStatus.COMPLETED for task in result['tasks'])
+    assert all(task.status == WorkItemStatus.COMPLETED for task in result['tasks'])
 
     # Both answers landed on messages and the synthesizer had the last word.
     assert [message.content for message in result['messages']] == [
@@ -146,9 +146,9 @@ def test_failing_sub_agent_is_recorded_and_does_not_break_the_flow(run_flow):
     )
 
     gas_task, food_task = result['tasks']
-    assert gas_task.status == TaskStatus.FAILED
+    assert gas_task.status == WorkItemStatus.FAILED
     assert gas_task.result == 'Gas Station Agent call failed: sub-agent is down'
-    assert food_task.status == TaskStatus.COMPLETED
+    assert food_task.status == WorkItemStatus.COMPLETED
 
     # The failure is handed to the synthesizer instead of being swallowed.
     assert 'Gas Station Agent call failed' in llm.synthesizer_inputs['agent_answers']
@@ -176,11 +176,11 @@ def test_flow_without_routable_tasks_returns_the_fallback(run_flow, tasks):
     ('tasks', 'expected'),
     [
         ([], 'response_synthesizer'),
-        ([Task(id=1, assigned_agent='gas_agent')], 'agent_node'),
+        ([WorkItem(id=1, assigned_agent='gas_agent')], 'agent_node'),
         (
             [
-                Task(id=1, assigned_agent='gas_agent', status=TaskStatus.COMPLETED),
-                Task(id=2, assigned_agent='food_agent'),
+                WorkItem(id=1, assigned_agent='gas_agent', status=WorkItemStatus.COMPLETED),
+                WorkItem(id=2, assigned_agent='food_agent'),
             ],
             'agent_node',
         ),

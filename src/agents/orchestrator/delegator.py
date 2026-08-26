@@ -2,7 +2,7 @@ from typing import Any
 
 from langchain_core.prompts import PromptTemplate
 from agents.orchestrator.llm import Llm
-from agents.state import GraphState,Task
+from agents.state import GraphState, WorkItem
 from a2a.types import AgentCard
 from a2a.types import (
     AgentCapabilities,
@@ -70,7 +70,7 @@ class Delegator:
 
     
     #converts Task to string
-    def tasksToString(self,task: Task):
+    def tasksToString(self,task: WorkItem):
         taskDict = {
             'id': task.id,
             'query': task.query,
