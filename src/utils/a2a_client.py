@@ -2,15 +2,22 @@
 
 import httpx
 
-from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, create_client
 from a2a.helpers import new_text_message
 from a2a.types import Role, SendMessageRequest
+from langfuse import get_client
 
 from utils.a2a_response import extract_artifact_text
 
 
+langfuse = get_client()
+
+
 async def call_sub_agent(user_request: str, agent_url: str) -> str:
     """Send a text request to an A2A sub-agent and return its text response."""
+
+    trace_id = langfuse.get_current_trace_id()
+    parent_observation_id = langfuse.get_current_observation_id()
 
     # Resolve the agent card to discover its A2A interface and capabilities
     async with httpx.AsyncClient() as httpx_client:
@@ -27,14 +34,26 @@ async def call_sub_agent(user_request: str, agent_url: str) -> str:
     )
 
     try:
-        # Build and send the request as an A2A user message
-        request = SendMessageRequest(
-            message=new_text_message(user_request, role=Role.ROLE_USER),
+        message = new_text_message(
+            user_request,
+            role=Role.ROLE_USER
         )
 
+        if trace_id and parent_observation_id:
+            message.metadata.update({
+                "langfuse_trace_id": trace_id,
+                "langfuse_parent_observation_id": parent_observation_id
+            })
+
+        # Build and send the request as an A2A user message
+        request = SendMessageRequest(message=message)
+
         extracted_texts: list[str] = []
+
+        call_context = ClientCallContext(timeout=30.0)
+
         # Iterate over the response chunks and extract text from each
-        async for chunk in client.send_message(request):
+        async for chunk in client.send_message(request, context=call_context):
             text = extract_artifact_text(chunk)
             if text:
                 extracted_texts.append(text)

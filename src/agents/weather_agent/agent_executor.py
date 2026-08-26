@@ -13,10 +13,12 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from langfuse.openai import AsyncOpenAI # type: ignore
-from langfuse import observe
+from openai import AsyncOpenAI # type: ignore
+from langfuse import observe, get_client
 
 load_dotenv()
+
+langfuse = get_client()
 
 
 class WeatherSearchParams(BaseModel):
@@ -39,67 +41,102 @@ class WeatherSearchParams(BaseModel):
             "Total forecast days to fetch from WeatherAPI (1 to 3): "
             "1 = Today / Current weather / Right now, "
             "2 = Tomorrow / in 1 day, "
-            "3 = Day after tomorrow / in 2 or 3 days (Max limit for free plan is 3)"
+            "3 = Day after tomorrow / in 2 days"
     )
 
-@observe(name="extract_weather_search_params")
+@observe(
+        name="extract_weather_search_params",
+        as_type="generation",
+        capture_input=False,
+        capture_output=False
+)
 async def extract_weather_search_params(driver_command: str) -> WeatherSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
-    
-    completion = await client.beta.chat.completions.parse(
+    messages = [
+        {
+            "role": "system", 
+            "content": (
+                "You are an NLP analysis module inside an in-car voice assistant system. "
+                "Your sole task is to extract weather search parameters from the driver's spoken command "
+                "and map them into the requested JSON schema."
+            )
+        },
+        {
+            "role": "user", 
+            "content": driver_command
+        }
+    ]
+
+    completion = await client.chat.completions.parse(
         model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system", 
-                "content": (
-                    "You are an NLP analysis module inside an in-car voice assistant system. "
-                    "Your sole task is to extract weather search parameters from the driver's spoken command "
-                    "and map them into the requested JSON schema."
-                )
-            },
-            {
-                "role": "user", 
-                "content": driver_command
-            }
-        ],
+        messages=messages,
         response_format=WeatherSearchParams,
         temperature=0.0
     )
-    return completion.choices[0].message.parsed
 
+    parsed = completion.choices[0].message.parsed
+    
+    langfuse.update_current_generation(
+        input=messages,
+        output = parsed.model_dump(mode="json", exclude_none=True) if parsed is not None else None,
+        model=completion.model,
+        usage_details = completion.usage.model_dump(exclude_none=True) if completion.usage is not None else {}
+    )
+    
+    if parsed is None:
+        raise ValueError("The model did not return valid weather search parameters.")
+    
+    return parsed
 
+@observe(
+        name="weather_api_forecast",
+        as_type="tool",
+        capture_input=False,
+        capture_output=False
+)
 async def fetch_weather_data(query: str, days: int, api_key: str) -> Dict[str, Any]:
     """Fetches weather data from WeatherAPI.com forecast endpoint."""
     url = "https://api.weatherapi.com/v1/forecast.json"
-    params = {
-        "key": api_key,
+    request_params = {
         "q": query,
         "days": min(max(days, 1), 3),  # capped at 3 days in the free plan
         "aqi": "no",
         "alerts": "yes",
     }
-
+    params = {"key": api_key, **request_params}
+    span_metadata = {
+        "provider": "weatherapi",
+        "endpoint": "forecast.json",
+        "http_method": "GET"
+    }
+    langfuse.update_current_span(input=request_params, metadata=span_metadata)
+    
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
+        langfuse.update_current_span(metadata={**span_metadata, "status_code": response.status_code})
+        response.raise_for_status() 
+        raw_response = response.json()
+        langfuse.update_current_span(output=raw_response)
+        return raw_response
 
 
 class MockWeatherAgent:
     """Mock version of WeatherAgent for offline testing."""
 
-    @observe(name="mock_weather_agent_invoke")
+    @observe(
+            name="mock_weather_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None,
+        car_lng: Optional[float] = None
     ) -> str:
         return (
-            "[MOCK] Weather in Warszawa: 35.3°C (feels like 33.7°C), thundery outbreaks in nearby. "
+            "[MOCK] Weather in Test City: 23.3°C (feels like 22.7°C), partly cloudy. "
             "Wind: 14.8 km/h, visibility: 9.0 km."
         )
 
@@ -107,14 +144,16 @@ class MockWeatherAgent:
 class WeatherAgent:
     """Sub-agent that resolves weather requests for drivers."""
 
-    @observe(name="weather_agent_invoke")
+    @observe(
+            name="weather_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None,
+        car_lng: Optional[float] = None
     ) -> str:
         try:
             search_params = await extract_weather_search_params(user_request)
@@ -150,7 +189,7 @@ class WeatherAgent:
         if api_alerts:
             headline = api_alerts[0].get("headline")
             if headline:
-                warnings.append(f"Official Weather Alert: {headline}.")
+                warnings.append(f"Weather alert: {headline}.")
 
         if requested_days > 1:
             forecast_days = data.get("forecast", {}).get("forecastday", [])
@@ -163,12 +202,6 @@ class WeatherAgent:
                 min_temp = day_info.get("mintemp_c", 0)
                 condition = day_info.get("condition", {}).get("text", "Unknown").lower()
                 chance_of_rain = day_info.get("daily_chance_of_rain", 0)
-                max_wind_kph = day_info.get("maxwind_kph", 0)
-
-                if min_temp <= 1 and chance_of_rain > 40:
-                    warnings.append("Caution: Freezing temperatures with precipitation expected, watch out for icy roads.")
-                if max_wind_kph > 50:
-                    warnings.append("Caution: Strong winds expected on this day.")
 
                 base_msg = (
                     f"Forecast for {city_name} on {date_str}: {condition} with temperatures "
@@ -182,23 +215,16 @@ class WeatherAgent:
             condition = current.get("condition", {}).get("text", "Unknown").lower()
             wind_kph = current.get("wind_kph", 0)
             vis_km = current.get("vis_km", 10)
-            precip_mm = current.get("precip_mm", 0)
-
-            if temp_c <= 1 and precip_mm > 0:
-                warnings.append("Caution: Freezing temperatures with precipitation may cause icy roads.")
-            if vis_km < 2.0:
-                warnings.append("Caution: Low visibility ahead due to fog or mist.")
-            if wind_kph > 50:
-                warnings.append("Caution: High wind speeds detected.")
 
             base_msg = (
                     f"Weather in {city_name}: {temp_c}°C (feels like {feelslike_c}°C), {condition}. "
                     f"Wind: {wind_kph} km/h, visibility: {vis_km} km."
                 )
 
-        if warnings:
-            return f"{base_msg} {' '.join(warnings)}"
-        return base_msg
+        response_parts = [base_msg]
+        response_parts.extend(warnings)
+
+        return "\n".join(response_parts)
 
 
 class WeatherAgentExecutor(AgentExecutor):
@@ -213,28 +239,14 @@ class WeatherAgentExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
 
-        incoming_trace_id: Optional[str] = None
-        incoming_parent_id: Optional[str] = None
+        metadata = context.message.metadata
+        trace_context = None
 
-        if hasattr(context.message, "metadata") and context.message.metadata:
-            meta = context.message.metadata
-            val_trace = None
-            val_parent = None
-
-            if hasattr(meta, "get"):
-                val_trace = meta.get("langfuse_trace_id")
-                val_parent = meta.get("langfuse_parent_observation_id")
-            else:
-                try:
-                    val_trace = meta["langfuse_trace_id"]
-                    val_parent = meta["langfuse_parent_observation_id"]
-                except (KeyError, TypeError):
-                    pass
-
-            if val_trace is not None:
-                incoming_trace_id = str(val_trace)
-            if val_parent is not None:
-                incoming_parent_id = str(val_parent)
+        if "langfuse_trace_id" in metadata and "langfuse_parent_observation_id" in metadata:
+            trace_context = {
+                "trace_id": metadata["langfuse_trace_id"],
+                "parent_span_id": metadata["langfuse_parent_observation_id"]
+            } 
 
         if context.current_task:
             task = context.current_task
@@ -260,13 +272,16 @@ class WeatherAgentExecutor(AgentExecutor):
         car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
-            result = await self.agent.invoke(
-                user_request=query, 
-                car_lat=car_lat, 
-                car_lng=car_lng,
-                langfuse_trace_id=incoming_trace_id,
-                langfuse_parent_observation_id=incoming_parent_id,
-            )
+            with langfuse.start_as_current_observation(
+                name="weather_agent_execute",
+                as_type="span",
+                trace_context=trace_context
+            ):
+                result = await self.agent.invoke(
+                    user_request=query, 
+                    car_lat=car_lat, 
+                    car_lng=car_lng
+                )
         else:
             result = 'No text input is provided!'
 

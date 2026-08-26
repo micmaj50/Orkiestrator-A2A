@@ -13,10 +13,12 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from langfuse.openai import AsyncOpenAI # type: ignore
-from langfuse import observe
+from openai import AsyncOpenAI # type: ignore
+from langfuse import observe, get_client
 
 load_dotenv()
+
+langfuse = get_client()
 
 
 class ParkingSearchParams(BaseModel):
@@ -44,33 +46,57 @@ class ParkingSearchParams(BaseModel):
         )
     )
 
-@observe(name="extract_parking_search_params")
+@observe(
+        name="extract_parking_search_params",
+        as_type="generation",
+        capture_input=False,
+        capture_output=False
+)
 async def extract_parking_search_params(driver_command: str) -> ParkingSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
-    
-    completion = await client.beta.chat.completions.parse(
+    messages = [
+        {
+            "role": "system", 
+            "content": (
+                "You are an NLP analysis module inside an in-car voice assistant system. "
+                "Your sole task is to extract parking search parameters "
+                "from the driver's spoken command and map them into the requested JSON schema."
+            )
+        },
+        {
+            "role": "user", 
+            "content": driver_command
+        }
+    ]
+
+    completion = await client.chat.completions.parse(
         model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system", 
-                "content": (
-                    "You are an NLP analysis module inside an in-car voice assistant system. "
-                    "Your sole task is to extract parking search parameters "
-                    "from the driver's spoken command and map them into the requested JSON schema."
-                )
-            },
-            {
-                "role": "user", 
-                "content": driver_command
-            }
-        ],
+        messages=messages,
         response_format=ParkingSearchParams,
         temperature=0.0
     )
-    return completion.choices[0].message.parsed
+    
+    parsed = completion.choices[0].message.parsed
+    
+    langfuse.update_current_generation(
+        input=messages,
+        output = parsed.model_dump(mode="json", exclude_none=True) if parsed is not None else None,
+        model=completion.model,
+        usage_details = completion.usage.model_dump(exclude_none=True) if completion.usage is not None else {}
+    )
+    
+    if parsed is None:
+        raise ValueError("The model did not return valid parking search parameters.")
 
+    return parsed
 
+@observe(
+        name="google_places_parking_search",
+        as_type="tool",
+        capture_input=False,
+        capture_output=False
+)
 async def search_parking_google(
     api_key: str,
     target_location: Optional[str] = None,
@@ -108,45 +134,60 @@ async def search_parking_google(
     else:
         raise ValueError("Either target_location or coordinates (lat, lng, radius) must be provided.")
 
+    endpoint = url.removeprefix("https://places.googleapis.com/v1/")
+    span_metadata = {
+        "provider": "google_places_api",
+        "endpoint": endpoint,
+        "http_method": "POST"
+    }
+    langfuse.update_current_span(input=payload, metadata=span_metadata)
+    
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.post(url, json=payload, headers=headers)
+        langfuse.update_current_span(metadata={**span_metadata, "status_code": response.status_code})
         response.raise_for_status()
-        return response.json()
+        raw_response = response.json()
+        langfuse.update_current_span(output=raw_response)
+        return raw_response
 
 
 class MockParkingAgent:
     """Mock version of ParkingAgent for offline testing."""
 
-    @observe(name="mock_parking_agent_invoke")
+    @observe(
+            name="mock_parking_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None,
+        car_lng: Optional[float] = None
     ) -> str:
         return (
             "[MOCK] I found the following parking options near your current location:\n"
-            "1. Parking Stadion Narodowy - aleja Zieleniecka 6, 03-727 Warszawa, Poland\n"
-            "2. Torwar - 00-456 Warsaw, Poland\n"
-            "3. Campanile Warszawa - Towarowa 2, 00-811 Warszawa, Poland\n"
-            "4. Parking Łazienki Królewskie - Parkowa 23, 00-759 Warszawa, Poland\n"
-            "5. Parking in the Old Town - Unnamed Road, 00-001 Warszawa, Poland"
+            "1. Example Parking - Testowa 19, Test City, Poland\n"
+            "2. Mock Parking Garage - Przykładowa 39, Test City, Poland\n"
+            "3. Demo Car Park - Testowa 77,  Test City, Poland\n"
+            "4. Sample Underground Parking - Mockowa 80, Test City, Poland\n"
+            "5. Test Parking Area - Wymyślona 44, Test City, Poland"
         )
 
 
 class ParkingAgent:
     """Sub-agent that resolves constraints and fetches parking places using Google Places API."""
 
-    @observe(name="parking_agent_invoke")
+    @observe(
+            name="parking_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None,
+        car_lng: Optional[float] = None
     ) -> str:
         try:
             search_params = await extract_parking_search_params(user_request)
@@ -207,28 +248,14 @@ class ParkingAgentExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
 
-        incoming_trace_id: Optional[str] = None
-        incoming_parent_id: Optional[str] = None
-
-        if hasattr(context.message, "metadata") and context.message.metadata:
-            meta = context.message.metadata
-            val_trace = None
-            val_parent = None
-
-            if hasattr(meta, "get"):
-                val_trace = meta.get("langfuse_trace_id")
-                val_parent = meta.get("langfuse_parent_observation_id")
-            else:
-                try:
-                    val_trace = meta["langfuse_trace_id"]
-                    val_parent = meta["langfuse_parent_observation_id"]
-                except (KeyError, TypeError):
-                    pass
-
-            if val_trace is not None:
-                incoming_trace_id = str(val_trace)
-            if val_parent is not None:
-                incoming_parent_id = str(val_parent)
+        metadata = context.message.metadata
+        trace_context = None
+        
+        if "langfuse_trace_id" in metadata and "langfuse_parent_observation_id" in metadata:
+            trace_context = {
+                "trace_id": metadata["langfuse_trace_id"],
+                "parent_span_id": metadata["langfuse_parent_observation_id"]
+            }
         
         # Reuse the current task or create one for a new request
         if context.current_task:
@@ -257,13 +284,16 @@ class ParkingAgentExecutor(AgentExecutor):
         car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
-            result = await self.agent.invoke(
-                user_request=query, 
-                car_lat=car_lat, 
-                car_lng=car_lng,
-                langfuse_trace_id=incoming_trace_id,
-                langfuse_parent_observation_id=incoming_parent_id
-            )
+            with langfuse.start_as_current_observation(
+                name="parking_agent_execute",
+                as_type="span",
+                trace_context=trace_context
+            ):
+                result = await self.agent.invoke(
+                    user_request=query, 
+                    car_lat=car_lat, 
+                    car_lng=car_lng
+                )
         else:
             result = 'No text input is provided!'
 
