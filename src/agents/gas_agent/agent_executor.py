@@ -13,10 +13,12 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from langfuse.openai import AsyncOpenAI # type: ignore
-from langfuse import observe
+from openai import AsyncOpenAI # type: ignore
+from langfuse import observe, get_client
 
 load_dotenv()
+
+langfuse = get_client()
 
 
 class GasSearchParams(BaseModel):
@@ -53,32 +55,50 @@ class GasSearchParams(BaseModel):
         )
     )
 
-@observe(name="extract_gas_search_params")
+@observe(
+        name="extract_gas_search_params",
+        as_type="generation",
+        capture_input=False,
+        capture_output=False
+)
 async def extract_gas_search_params(driver_command: str) -> GasSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
+    messages = [
+        {
+            "role": "system", 
+            "content": (
+                "You are an NLP analysis module inside an in-car voice assistant system. "
+                "Your sole task is to extract gas station search parameters from the driver's spoken command "
+                "and map them into the requested JSON schema."
+            )
+        },
+        {
+            "role": "user", 
+            "content": driver_command
+        }
+    ]
     
-    completion = await client.beta.chat.completions.parse(
+    completion = await client.chat.completions.parse(
         model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system", 
-                "content": (
-                    "You are an NLP analysis module inside an in-car voice assistant system. "
-                    "Your sole task is to extract gas station search parameters from the driver's spoken command "
-                    "and map them into the requested JSON schema."
-                )
-            },
-            {
-                "role": "user", 
-                "content": driver_command
-            }
-        ],
+        messages=messages,
         response_format=GasSearchParams,
         temperature=0.0
     )
-    return completion.choices[0].message.parsed
 
+    parsed = completion.choices[0].message.parsed
+
+    langfuse.update_current_generation(
+        input=messages,
+        output = parsed.model_dump(mode="json", exclude_none=True) if parsed is not None else None,
+        model=completion.model,
+        usage_details = completion.usage.model_dump(exclude_none=True) if completion.usage is not None else {}
+    )
+
+    if parsed is None:
+        raise ValueError("The model did not return valid gas search parameters.")
+
+    return parsed
 
 async def geocode_location_here(location: str, api_key: str) -> tuple[float, float]:
     """Converts a text location to coordinates using HERE Geocoding API."""
@@ -118,7 +138,12 @@ async def search_gas_here(lat: float, lng: float, radius: int, api_key: str) -> 
         response.raise_for_status()
         return response.json()
     
-
+@observe(
+        name="google_places_gas_search",
+        as_type="tool",
+        capture_input=False,
+        capture_output=False
+)
 async def search_gas_google(
     api_key: str,
     target_location: Optional[str] = None,
@@ -126,7 +151,7 @@ async def search_gas_google(
     lng: Optional[float] = None,
     radius: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Searches for gas stations using Google Places API."""
+    """Searches for gas stations using Google Places API (New)."""
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
@@ -156,32 +181,45 @@ async def search_gas_google(
     else:
         raise ValueError("Either target_location or coordinates (lat, lng, radius) must be provided.")
 
+    endpoint = url.removeprefix("https://places.googleapis.com/v1/")
+    span_metadata = {
+        "provider": "google_places_api",
+        "endpoint": endpoint,
+        "http_method": "POST"
+    }
+    langfuse.update_current_span(input=payload, metadata=span_metadata)
+
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.post(url, json=payload, headers=headers)
+        langfuse.update_current_span(metadata={**span_metadata, "status_code": response.status_code})
         response.raise_for_status()
-        return response.json()
+        raw_response = response.json()
+        langfuse.update_current_span(output=raw_response)
+        return raw_response
 
 
 class MockGasStationAgent:
     """Mock version of GasStationAgent for offline testing."""
 
-    @observe(name="mock_gas_agent_invoke")
+    @observe(
+            name="mock_gas_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None
+        car_lng: Optional[float] = None
     ) -> str:
 
         return (
             "[MOCK] I found the following gas stations near your location:\n"
-            "1. Orlen - Al. 3 Maja 1A, 00-401 Warszawa, Poland\n"
-            "2. Petrol Station ORLEN - Grzybowska 74, 00-844 Warszawa, Poland\n"
-            "3. BP - Al. Solidarności 100, 01-016 Warszawa, Poland\n"
-            "4. Shell - Srebrna 9, 00-810 Warszawa, Poland\n"
-            "5. Circle K - Polna 1A, 00-622 Warszawa, Poland"
+            "1. Example Fuel Station - Testowa 15, Test City, Poland\n"
+            "2. Mock Fuel Point - Przykładowa 28, Test City, Poland\n"
+            "3. Demo Gas Station - Testowa 63,  Test City, Poland\n"
+            "4. Sample Station - Mockowa 69, Test City, Poland\n"
+            "5. Test Fuel Stop - Wymyślona 29, Test City, Poland"
         )
 
 
@@ -191,14 +229,16 @@ class GasStationAgent:
     # HERE Category ID for Gas Stations
     GAS_STATION_CATEGORY_ID = "700-7600-0116"
 
-    @observe(name="gas_agent_invoke")
+    @observe(
+            name="gas_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None
+        car_lng: Optional[float] = None
     ) -> str:
         try:
             # Extract parameters using OpenAI
@@ -336,28 +376,15 @@ class GasStationAgentExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
 
-        incoming_trace_id: Optional[str] = None
-        incoming_parent_id: Optional[str] = None
+        metadata = context.message.metadata
+        trace_context = None
 
-        if hasattr(context.message, "metadata") and context.message.metadata:
-            meta = context.message.metadata
-            val_trace = None
-            val_parent = None
+        if "langfuse_trace_id" in metadata and "langfuse_parent_observation_id" in metadata:
+            trace_context = {
+                "trace_id": metadata["langfuse_trace_id"],
+                "parent_span_id": metadata["langfuse_parent_observation_id"]
+            }
 
-            if hasattr(meta, "get"):
-                val_trace = meta.get("langfuse_trace_id")
-                val_parent = meta.get("langfuse_parent_observation_id")
-            else:
-                try:
-                    val_trace = meta["langfuse_trace_id"]
-                    val_parent = meta["langfuse_parent_observation_id"]
-                except (KeyError, TypeError):
-                    pass
-
-            if val_trace is not None:
-                incoming_trace_id = str(val_trace)
-            if val_parent is not None:
-                incoming_parent_id = str(val_parent)
 
         if context.current_task:
             task = context.current_task
@@ -383,13 +410,16 @@ class GasStationAgentExecutor(AgentExecutor):
         car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
-            result = await self.agent.invoke(
-                user_request=query, 
-                car_lat=car_lat, 
-                car_lng=car_lng,
-                langfuse_trace_id=incoming_trace_id,
-                langfuse_parent_observation_id=incoming_parent_id
-            )
+            with langfuse.start_as_current_observation(
+                name="gas_agent_execute",
+                as_type="span",
+                trace_context=trace_context
+            ):
+                result = await self.agent.invoke(
+                    user_request=query, 
+                    car_lat=car_lat, 
+                    car_lng=car_lng
+                )
         else:
             result = 'No text input is provided!'
 

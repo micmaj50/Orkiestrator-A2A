@@ -39,7 +39,8 @@ class Synthesizer:
                 "user_request": request,
                 "agent_answers": answers,
             },
-            asJSON=_asJSON
+            asJSON=_asJSON,
+            observation_name="response_synthesis"
         )
 
         self.responses.append(final_response)

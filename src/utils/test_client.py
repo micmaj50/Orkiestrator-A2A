@@ -15,7 +15,7 @@ ORCHESTRATOR_URL = get_orchestrator_url()
 
 async def send_message(text_query: str) -> None:
     # Resolve the agent card to discover its A2A interface and capabilities
-    async with httpx.AsyncClient(timeout=15.0) as httpx_client:
+    async with httpx.AsyncClient(timeout=60.0) as httpx_client:
         resolver = A2ACardResolver(
                 httpx_client=httpx_client,
                 base_url=ORCHESTRATOR_URL,

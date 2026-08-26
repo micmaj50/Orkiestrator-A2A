@@ -13,10 +13,12 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from langfuse.openai import AsyncOpenAI # type: ignore
-from langfuse import observe
+from openai import AsyncOpenAI # type: ignore
+from langfuse import observe, get_client
 
 load_dotenv()
+
+langfuse = get_client()
 
 
 class FoodSearchParams(BaseModel):
@@ -62,31 +64,50 @@ class FoodSearchParams(BaseModel):
         )
     )
 
-@observe(name="extract_food_search_params")
+@observe(
+        name="extract_food_search_params",
+        as_type="generation",
+        capture_input=False,
+        capture_output=False
+)
 async def extract_food_search_params(driver_command: str) -> FoodSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
     client = AsyncOpenAI()
+    messages = [
+        {
+            "role": "system", 
+            "content": (
+                "You are an NLP analysis module inside an in-car voice assistant system. "
+                "Your sole task is to extract food and restaurant search parameters "
+                "from the driver's spoken command and map them into the requested JSON schema."
+            )
+        },
+        {
+            "role": "user", 
+            "content": driver_command
+        }
+    ]
     
-    completion = await client.beta.chat.completions.parse(
+    completion = await client.chat.completions.parse(
         model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system", 
-                "content": (
-                    "You are an NLP analysis module inside an in-car voice assistant system. "
-                    "Your sole task is to extract food and restaurant search parameters "
-                    "from the driver's spoken command and map them into the requested JSON schema."
-                )
-            },
-            {
-                "role": "user", 
-                "content": driver_command
-            }
-        ],
+        messages=messages,
         response_format=FoodSearchParams,
         temperature=0.0
     )
-    return completion.choices[0].message.parsed
+    
+    parsed = completion.choices[0].message.parsed
+
+    langfuse.update_current_generation(
+        input=messages,
+        output = parsed.model_dump(mode="json", exclude_none=True) if parsed is not None else None,
+        model=completion.model,
+        usage_details = completion.usage.model_dump(exclude_none=True) if completion.usage is not None else {}
+    )
+
+    if parsed is None:
+        raise ValueError("The model did not return valid food search parameters.")
+
+    return parsed
 
 
 async def geocode_location_here(location: str, api_key: str) -> tuple[float, float]:
@@ -130,7 +151,12 @@ async def search_food_here(lat: float, lng: float, query_text: Optional[str], ap
         response.raise_for_status()
         return response.json()
 
-
+@observe(
+        name="google_places_food_search",
+        as_type="tool",
+        capture_input=False,
+        capture_output=False
+)
 async def search_food_google(
     api_key: str,
     cuisine_or_type: Optional[str] = None,
@@ -164,45 +190,60 @@ async def search_food_google(
     else:
         payload["textQuery"] = food_query
 
+    endpoint = url.removeprefix("https://places.googleapis.com/v1/")
+    span_metadata = {
+        "provider": "google_places_api",
+        "endpoint": endpoint,
+        "http_method": "POST"
+    }
+    langfuse.update_current_span(input=payload, metadata=span_metadata)
+
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.post(url, json=payload, headers=headers)
+        langfuse.update_current_span(metadata={**span_metadata, "status_code": response.status_code})
         response.raise_for_status()
-        return response.json()
+        raw_response = response.json()
+        langfuse.update_current_span(output=raw_response)
+        return raw_response
 
 
 class MockFoodAgent:
     """Mock version of FoodAgent for offline testing."""
 
-    @observe(name="mock_food_agent_invoke")
+    @observe(
+            name="mock_food_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
         car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None,
     ) -> str:
         return (
             "[MOCK] I found the following dining options near your location:\n"
-            "1. Soul Kitchen - Nowogrodzka 18A, 00-511 Warszawa, Poland\n"
-            "2. Sisters Restaurant – Restauracja Ukraińska Warszawa - Marszałkowska 68/70, 00-545 Warszawa, Poland\n"
-            "3. Little Georgia - Nowogrodzka 40, 00-691 Warszawa, Poland\n"
-            "4. Takesan Ramen Warsaw - Marszałkowska 85, 00-683 Warszawa, Poland\n"
-            "5. Royal Restaurant - polska kuchnia - Marszałkowska 138, 00-002 Warszawa, Poland"
+            "1. Example Bistro - Testowa 12, Test City, Poland\n"
+            "2. Mock Sushi House - Przykładowa 17, Test City, Poland\n"
+            "3. Demo Pizza - Testowa 34,  Test City, Poland\n"
+            "4. Sample Burger - Mockowa 67, Test City, Poland\n"
+            "5. Test Kitchen - Wymyślona 31, Test City, Poland"
         )
     
 
 class FoodAgent:
     """Sub-agent that resolves constraints and fetches restaurants near coordinates using Google Places API or HERE Discover API."""
 
-    @observe(name="food_agent_invoke")
+    @observe(
+            name="food_agent_invoke",
+            capture_input=False,
+            capture_output=False
+    )
     async def invoke(
         self, 
         user_request: str, 
         car_lat: Optional[float] = None, 
-        car_lng: Optional[float] = None,
-        langfuse_trace_id: Optional[str] = None,
-        langfuse_parent_observation_id: Optional[str] = None,
+        car_lng: Optional[float] = None
     ) -> str:
         try:
             # Extract parameters using LLM
@@ -339,28 +380,14 @@ class FoodAgentExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
 
-        incoming_trace_id: Optional[str] = None
-        incoming_parent_id: Optional[str] = None
-
-        if hasattr(context.message, "metadata") and context.message.metadata:
-            meta = context.message.metadata
-            val_trace = None
-            val_parent = None
-
-            if hasattr(meta, "get"):
-                val_trace = meta.get("langfuse_trace_id")
-                val_parent = meta.get("langfuse_parent_observation_id")
-            else:
-                try:
-                    val_trace = meta["langfuse_trace_id"]
-                    val_parent = meta["langfuse_parent_observation_id"]
-                except (KeyError, TypeError):
-                    pass
-
-            if val_trace is not None:
-                incoming_trace_id = str(val_trace)
-            if val_parent is not None:
-                incoming_parent_id = str(val_parent)
+        metadata = context.message.metadata
+        trace_context = None
+        
+        if "langfuse_trace_id" in metadata and "langfuse_parent_observation_id" in metadata:
+            trace_context = {
+                "trace_id": metadata["langfuse_trace_id"],
+                "parent_span_id": metadata["langfuse_parent_observation_id"]
+            }
 
         # Reuse the current task or create one for a new request
         if context.current_task:
@@ -389,13 +416,16 @@ class FoodAgentExecutor(AgentExecutor):
         car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
-            result = await self.agent.invoke(
-                user_request=query, 
-                car_lat=car_lat, 
-                car_lng=car_lng,
-                langfuse_trace_id=incoming_trace_id,
-                langfuse_parent_observation_id=incoming_parent_id,
-            )
+            with langfuse.start_as_current_observation(
+                name="food_agent_execute",
+                as_type="span",
+                trace_context=trace_context
+            ):
+                result = await self.agent.invoke(
+                    user_request=query, 
+                    car_lat=car_lat, 
+                    car_lng=car_lng
+                )
         else:
             result = 'No text input is provided!'
 

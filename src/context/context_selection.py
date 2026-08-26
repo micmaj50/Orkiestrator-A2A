@@ -1,11 +1,8 @@
-from __future__ import annotations
 from enum import StrEnum
-from typing import Self, TYPE_CHECKING
-from pydantic import Field
+from typing import Final
 
+from pydantic import Field
 from common.model_config import ConfiguredBaseModel
-if TYPE_CHECKING:
-    from context.context_groups import ContextGroup
 
 class ContextKey(StrEnum):
     # if we ever add SystemContext class with a `car` field inside it, the path must start with `car`
@@ -26,13 +23,18 @@ class ContextKey(StrEnum):
 class ContextSelection(ConfiguredBaseModel):
     fields: list[ContextKey] = Field(default_factory=list)
 
-    @classmethod
-    def from_groups(cls, selected_context: list[ContextGroup]) -> Self:
-        combined_fields = list(
-            dict.fromkeys(
-            field 
-            for obj in selected_context 
-            for field in obj.context.fields
-            ))
 
-        return cls(fields=combined_fields)
+"""Predetermined context for each agent"""
+
+FOOD_AGENT_SELECTION: Final = ContextSelection(
+    fields=[ContextKey.CURRENT_LOCATION,
+            ContextKey.OBSERVED_AT])
+
+GAS_AGENT_SELECTION: Final = ContextSelection(
+    fields=[ContextKey.FUEL_TYPE,
+            ContextKey.CURRENT_LOCATION,
+            ContextKey.REMAINING_RANGE_KM])
+
+PARKING_AGENT_SELECTION: Final = ContextSelection(
+    fields=[ContextKey.CURRENT_LOCATION,
+            ContextKey.OBSERVED_AT])
