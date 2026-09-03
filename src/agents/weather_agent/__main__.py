@@ -1,7 +1,4 @@
-import uvicorn
-from config import get_weather_agent_host, get_weather_agent_port
-from .app import create_weather_agent_app
+from server.run_agent import run_agent
 
 if __name__ == "__main__":
-    app = create_weather_agent_app()
-    uvicorn.run(app, host=get_weather_agent_host(), port=get_weather_agent_port())
+    run_agent("weather_agent")

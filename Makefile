@@ -1,7 +1,7 @@
 ENV_FILE ?= .env
 UV_RUN := uv run --env-file $(ENV_FILE)
 
-.PHONY: run-server run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client test-integration \
+.PHONY: run-server run-orchestrator run-gas-agent run-food-agent run-parking-agent run-weather-agent run-client test-integration test-agent-registry \
 	docker-config docker-build docker-up docker-up-build docker-build-no-cache docker-ps docker-logs docker-client docker-down docker-smoke
 
 # unified server mode
@@ -29,6 +29,9 @@ run-client:
 
 test-integration:
 	$(UV_RUN) pytest -s tests/integration/smoke_test.py
+
+test-agent-registry:
+	$(UV_RUN) pytest -v tests/test_agent_registry.py
 
 docker-config:
 	docker compose config

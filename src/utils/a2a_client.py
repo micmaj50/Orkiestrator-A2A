@@ -1,12 +1,12 @@
 """Minimal A2A client helper for calling sub-agents over the A2A protocol."""
 
 import httpx
-
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, create_client
 from a2a.helpers import new_text_message
 from a2a.types import Role, SendMessageRequest
 from langfuse import get_client
 
+from config import get_sub_agent_timeout_seconds
 from utils.a2a_response import extract_artifact_text
 
 
@@ -50,7 +50,7 @@ async def call_sub_agent(user_request: str, agent_url: str) -> str:
 
         extracted_texts: list[str] = []
 
-        call_context = ClientCallContext(timeout=30.0)
+        call_context = ClientCallContext(timeout=get_sub_agent_timeout_seconds())
 
         # Iterate over the response chunks and extract text from each
         async for chunk in client.send_message(request, context=call_context):
@@ -60,7 +60,7 @@ async def call_sub_agent(user_request: str, agent_url: str) -> str:
 
         if not extracted_texts:
             return ''
-        
+
         return extracted_texts[-1]
 
     finally:

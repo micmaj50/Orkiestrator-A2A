@@ -6,6 +6,12 @@ from langchain_core.prompts import BasePromptTemplate
 from langchain_openai import ChatOpenAI
 from langfuse import get_client, observe
 
+from config import (
+    get_llm_max_output_tokens,
+    get_llm_max_retries,
+    get_llm_timeout_seconds,
+)
+
 MODEL = "gpt-4o-mini"
 langfuse = get_client()
 
@@ -15,7 +21,10 @@ class Llm:
     def __init__(self):
         self.llm = ChatOpenAI(
             model=MODEL,
-            api_key = os.environ["OPENAI_API_KEY"] # type: ignore
+            api_key = os.environ["OPENAI_API_KEY"], # type: ignore
+            timeout=get_llm_timeout_seconds(),
+            max_retries=get_llm_max_retries(),
+            max_completion_tokens=get_llm_max_output_tokens(),
         )
 
     @observe(
@@ -30,7 +39,7 @@ class Llm:
         executes a merged prompt
 
 
-        
+
         Parameters
         ----------
         prompt : BasePromptTemplate
@@ -38,7 +47,7 @@ class Llm:
         inputs : dict[str, Any]
             A dictionary containing the keys and values to format into the template.
         asJSON : bool
-            A flag indicating whether to parse and return the output as a dictionary (True) 
+            A flag indicating whether to parse and return the output as a dictionary (True)
             or as a plain string (False).
 
         Returns

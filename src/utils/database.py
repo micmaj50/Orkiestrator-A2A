@@ -1,11 +1,7 @@
-import json
-from typing import List, cast
-import numpy as np
+from a2a.types import AgentCard, AgentSkill
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from FlagEmbedding import BGEM3FlagModel
-import uuid
-from utils.schema.Agent import A2AAgent
 
 
 COLLECTION_NAME = "agent_skills"
@@ -41,69 +37,65 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
     query_vector = model.encode([query_text])["dense_vecs"][0].tolist()
 
     response = client.query_points(
-        collection_name="agent_skills", query=query_vector, limit=1
+        collection_name=COLLECTION_NAME,
+        query=query_vector,
+        limit=1,
     )
 
     if response.points and response.points[0].payload:
         payload = response.points[0].payload
-        return payload.get("agent_name") or payload.get("name")
+        return payload.get("agent_name")
 
     return None
 
-def upload_agents_from_file(
-    client: QdrantClient, file_path: str, collection_name: str = "agent_skills"
-) -> None:
 
-    """
-    Load agent profiles from a JSON file, create embeddings, and upsert them to Qdrant.
 
-    Parameters
-    ----------
-    client : QdrantClient
-        Qdrant client instance.
-    file_path : str
-        Path to the JSON file containing agent definitions.
-    collection_name : str, optional
-        Target Qdrant collection name (default is "agent_skills").
+def _skill_to_text(card: AgentCard, skill: AgentSkill) -> str:
+    tags = ". ".join(skill.tags or [])
 
-    Returns
-    -------
-    Mone
-    """
+    skill_text = (
+        f"Agent: {card.name}\n"
+        f"Agent description: {card.description}\n"
+        f"Skill: {skill.name}\n"
+        f"Skill description: {skill.description}\n"
+        f"Tags: {tags}\n"
+    )
 
-    
-    if not client.collection_exists(collection_name):
+    return [skill_text, *(skill.examples or [])]
+
+
+def upload_agents_cards(client: QdrantClient, agent_cards: dict[str, AgentCard]) -> None:
+    """Build Qdrant skill index from discovered A2A agent cards."""
+
+    if not client.collection_exists(COLLECTION_NAME):
         client.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=1024, distance=Distance.COSINE)
         )
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        items = json.load(f)
 
     model = _get_embedding_model()
     points = []
+    point_id = 1
 
-    for idx, item in enumerate(items):
-        payload = item.get("payload", item)
+    for agent_name, card in sorted(agent_cards.items()):
+        for skill in card.skills or []:
+            for text in _skill_to_text(card, skill):
+                vector = model.encode([text])["dense_vecs"][0].tolist()
 
-        text = item.get("text_to_embed")
-        if not text:
-            name = payload.get("agent_name", payload.get("name", ""))
-            desc = payload.get("descryption", payload.get("description", ""))
-            skills = payload.get("sklills", payload.get("skills", []))
-            text = f"{name} {desc} {' '.join(skills)}"
+                points.append(
+                    PointStruct(
+                        id=point_id,
+                        vector=vector,
+                        payload={
+                            "agent_name": agent_name,
+                            "skill_id": skill.id
+                        }
+                    )
+                )
+                point_id += 1
 
-        vector = model.encode([text])["dense_vecs"][0].tolist()
-        point_id = payload.get("agent_id", item.get("id", idx + 1))
-
-        points.append(
-            PointStruct(
-                id=point_id,
-                vector=vector,
-                payload=payload
-            )
+    if points:
+        client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=points
         )
-
-    client.upsert(collection_name=collection_name, points=points)
-

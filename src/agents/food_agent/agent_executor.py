@@ -1,8 +1,7 @@
 import os
-from typing import Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Literal, Optional
+
 import httpx
-from dotenv import load_dotenv
 from a2a.helpers import (
     get_message_text,
     new_task_from_user_message,
@@ -13,8 +12,17 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from openai import AsyncOpenAI # type: ignore
-from langfuse import observe, get_client
+from dotenv import load_dotenv
+from langfuse import get_client, observe
+from openai import AsyncOpenAI  # type: ignore
+from pydantic import BaseModel, Field
+
+from config import (
+    get_external_api_timeout_seconds,
+    get_llm_max_output_tokens,
+    get_llm_max_retries,
+    get_llm_timeout_seconds,
+)
 
 load_dotenv()
 
@@ -29,7 +37,7 @@ class FoodSearchParams(BaseModel):
         )
     )
     target_location: Optional[str] = Field(
-        default=None, 
+        default=None,
         description=(
             "A specific location provided by the driver to search around. "
             "Can be a city (e.g., 'London', 'Warszawa'), a street (e.g., 'Krakowskie Przedmieście'), "
@@ -40,7 +48,7 @@ class FoodSearchParams(BaseModel):
         )
     )
     search_radius_meters: int = Field(
-        default=3000, 
+        default=3000,
         description=(
             "The search radius in meters. Convert spoken distance units (e.g., 'within 5km') "
             "to integer meters (5000). Default to 3000 if not specified by the driver."
@@ -72,10 +80,13 @@ class FoodSearchParams(BaseModel):
 )
 async def extract_food_search_params(driver_command: str) -> FoodSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
-    client = AsyncOpenAI()
+    client = AsyncOpenAI(
+        timeout=get_llm_timeout_seconds(),
+        max_retries=get_llm_max_retries(),
+    )
     messages = [
         {
-            "role": "system", 
+            "role": "system",
             "content": (
                 "You are an NLP analysis module inside an in-car voice assistant system. "
                 "Your sole task is to extract food and restaurant search parameters "
@@ -83,18 +94,19 @@ async def extract_food_search_params(driver_command: str) -> FoodSearchParams:
             )
         },
         {
-            "role": "user", 
+            "role": "user",
             "content": driver_command
         }
     ]
-    
+
     completion = await client.chat.completions.parse(
         model="gpt-4o-mini",
         messages=messages,
         response_format=FoodSearchParams,
-        temperature=0.0
+        temperature=0.0,
+        max_tokens=get_llm_max_output_tokens(),
     )
-    
+
     parsed = completion.choices[0].message.parsed
 
     langfuse.update_current_generation(
@@ -117,15 +129,15 @@ async def geocode_location_here(location: str, api_key: str) -> tuple[float, flo
         "q": location,
         "apiKey": api_key
     }
-    
-    async with httpx.AsyncClient() as client:
+
+    async with httpx.AsyncClient(timeout=get_external_api_timeout_seconds()) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-        
+
         if not data.get("items"):
             raise ValueError(f"Could not resolve coordinates for: '{location}'")
-            
+
         position = data["items"][0]["position"]
         return position["lat"], position["lng"]
 
@@ -141,12 +153,12 @@ async def search_food_here(lat: float, lng: float, query_text: Optional[str], ap
         "limit": 5,
         "apiKey": api_key
     }
-    
+
     # If the driver specified a food type (e.g., sushi), pass it to HERE
     # Otherwise, default to searching for "restaurant"
     params["q"] = query_text if query_text else "restaurant"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=get_external_api_timeout_seconds()) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -198,7 +210,7 @@ async def search_food_google(
     }
     langfuse.update_current_span(input=payload, metadata=span_metadata)
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=get_external_api_timeout_seconds()) as client:
         response = await client.post(url, json=payload, headers=headers)
         langfuse.update_current_span(metadata={**span_metadata, "status_code": response.status_code})
         response.raise_for_status()
@@ -216,9 +228,9 @@ class MockFoodAgent:
             capture_output=False
     )
     async def invoke(
-        self, 
-        user_request: str, 
-        car_lat: Optional[float] = None, 
+        self,
+        user_request: str,
+        car_lat: Optional[float] = None,
         car_lng: Optional[float] = None,
     ) -> str:
         return (
@@ -229,7 +241,7 @@ class MockFoodAgent:
             "4. Sample Burger - Mockowa 67, Test City, Poland\n"
             "5. Test Kitchen - Wymyślona 31, Test City, Poland"
         )
-    
+
 
 class FoodAgent:
     """Sub-agent that resolves constraints and fetches restaurants near coordinates using Google Places API or HERE Discover API."""
@@ -240,9 +252,9 @@ class FoodAgent:
             capture_output=False
     )
     async def invoke(
-        self, 
-        user_request: str, 
-        car_lat: Optional[float] = None, 
+        self,
+        user_request: str,
+        car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
     ) -> str:
         try:
@@ -263,7 +275,7 @@ class FoodAgent:
 
         except Exception as e:
             return f"An error occurred while processing the request: {str(e)}"
-    
+
 
     async def _search_via_google(
         self,
@@ -276,7 +288,7 @@ class FoodAgent:
         if search_params.use_current_location:
             if car_lat is None or car_lng is None:
                 return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
-            
+
             raw_results = await search_food_google(
                 api_key=api_key,
                 cuisine_or_type=search_params.cuisine_or_type,
@@ -288,7 +300,7 @@ class FoodAgent:
         else:
             if not search_params.target_location:
                 return "Sorry, I couldn't understand the target location for the food search."
-            
+
             raw_results = await search_food_google(
                 api_key=api_key,
                 cuisine_or_type=search_params.cuisine_or_type,
@@ -338,12 +350,12 @@ class FoodAgent:
             query_text=search_params.cuisine_or_type,
             api_key=api_key
         )
-        
+
         items = raw_results.get("items", [])
 
         if search_params.search_radius_meters:
             items = [
-                item for item in items 
+                item for item in items
                 if item.get("distance", 0) <= search_params.search_radius_meters
             ]
 
@@ -362,9 +374,9 @@ class FoodAgent:
                 distance_str = f"{distance_km:.2f} km away"
             else:
                 distance_str = f"{distance_km:.2f} km from {location_name}"
-            
+
             response_lines.append(f"{i}. {name} - {address} ({distance_str})")
-            
+
         return "\n".join(response_lines)
 
 
@@ -382,7 +394,7 @@ class FoodAgentExecutor(AgentExecutor):
 
         metadata = context.message.metadata
         trace_context = None
-        
+
         if "langfuse_trace_id" in metadata and "langfuse_parent_observation_id" in metadata:
             trace_context = {
                 "trace_id": metadata["langfuse_trace_id"],
@@ -398,8 +410,8 @@ class FoodAgentExecutor(AgentExecutor):
 
         # Mark the task as working in EventQueue
         task_updater = TaskUpdater(
-            event_queue=event_queue, 
-            task_id=task.id, 
+            event_queue=event_queue,
+            task_id=task.id,
             context_id=task.context_id
         )
         await task_updater.update_status(
@@ -409,7 +421,7 @@ class FoodAgentExecutor(AgentExecutor):
 
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
-        
+
         # Change this if the Orchestrator sends car GPS in a different field.
         # Currently defaults to Warsaw Center coordinates as a fallback mock.
         car_lat = getattr(context, 'car_lat', 52.2297)
@@ -422,8 +434,8 @@ class FoodAgentExecutor(AgentExecutor):
                 trace_context=trace_context
             ):
                 result = await self.agent.invoke(
-                    user_request=query, 
-                    car_lat=car_lat, 
+                    user_request=query,
+                    car_lat=car_lat,
                     car_lng=car_lng
                 )
         else:
@@ -433,7 +445,7 @@ class FoodAgentExecutor(AgentExecutor):
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result, 
+                    text=result,
                     media_type='text/plain'
                 )
             ]

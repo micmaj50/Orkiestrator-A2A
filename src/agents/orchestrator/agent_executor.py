@@ -1,4 +1,5 @@
-from langchain_core.messages import HumanMessage
+import asyncio
+
 from a2a.helpers import (
     get_message_text,
     new_task_from_user_message,
@@ -9,10 +10,16 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from langfuse import observe, get_client
+from langchain_core.messages import HumanMessage
+from langfuse import get_client, observe
+from langgraph.errors import GraphRecursionError
 
 from agents.graph import graph
 from agents.state import GraphState
+from config import (
+    get_graph_recursion_limit,
+    get_request_timeout_seconds,
+)
 
 
 class Orchestrator:
@@ -23,12 +30,25 @@ class Orchestrator:
             capture_input=False,
             capture_output=False
     )
-    async def invoke(self, user_request: str) -> str:
-        state = GraphState(user_input=HumanMessage(content=user_request))
+    async def invoke(self, user_request: str, thread_id: str) -> str:
+        user_msg = HumanMessage(content=user_request)
+
+        state = GraphState(
+            user_input=user_msg,
+            messages=[user_msg],
+            tasks=[],
+            )
+
+        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": get_graph_recursion_limit()}
 
         # graph.ainvoke returns the final state as a dict-like mapping
         # (channel name -> value) for a pydantic state schema.
-        result = await graph.ainvoke(state)
+        #
+        # This is the outermost cap on the whole run, so a request can never hang.
+        result = await asyncio.wait_for(
+            graph.ainvoke(state, config),
+            timeout=get_request_timeout_seconds(),
+        )
 
         if isinstance(result, GraphState):
             messages = result.messages
@@ -49,7 +69,7 @@ class Orchestrator:
 
 class OrchestratorExecutor(AgentExecutor):
     """A2A executor for the orchestrator"""
-    
+
     def __init__(self) -> None:
         self.agent = Orchestrator()
 
@@ -92,31 +112,43 @@ class OrchestratorExecutor(AgentExecutor):
         langfuse.update_current_span(
             input={"user_request": query}
         )
-        if query:
-            result = await self.agent.invoke(user_request=query)
-        else:
-            result = 'No text input is provided!'
+        try:
+            if query:
+                thread_id = task.context_id or str(task.id)
+                result = await self.agent.invoke(user_request=query, thread_id=thread_id)
+            else:
+                result = 'No text input is provided!'
 
-        langfuse.update_current_span(
-            output={"response": result}
-        )
+            langfuse.update_current_span(
+                output={"response": result}
+            )
 
-        # 4. Add the orchestrator response as an artifact to EventQueue
-        await task_updater.add_artifact(
-                parts=[
-                    new_text_part(
-                        text=result,
-                        media_type='text/plain'
-                        )
-                    ]
-                )
-        print('Orchestrator result: ', result)
+            # 4. Add the orchestrator response as an artifact to EventQueue
+            await task_updater.add_artifact(
+                    parts=[
+                        new_text_part(
+                            text=result,
+                            media_type='text/plain'
+                            )
+                        ]
+                    )
+            print('Orchestrator result: ', result)
 
-        # 5. Update task status to completed
-        await task_updater.update_status(
-            state=TaskState.TASK_STATE_COMPLETED,
-            message=new_text_message('Sub-agent request is completed!'),
-        )
+            # 5. Update task status to completed
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_COMPLETED,
+                message=new_text_message('Sub-agent request is completed!'),
+            )
+        except TimeoutError:
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_FAILED,
+                message=new_text_message('The request took too long and was stopped. Please try again.'),
+            )
+        except GraphRecursionError:
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_FAILED,
+                message=new_text_message('The request could not be completed. Please try rephrasing it.'),
+            )
 
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
