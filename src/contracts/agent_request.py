@@ -1,13 +1,13 @@
 import json
 
-from langchain_core.prompts import PromptTemplate
 from pydantic import Field
+from langchain_core.prompts import PromptTemplate
 
-from agents.orchestrator.llm import Llm
 from context.agent_context import AgentContext
 from context.car import CarContext
-from context.context_groups import CONTEXT_GROUPS
 from context.context_selection import ContextSelection
+from context.context_groups import CONTEXT_GROUPS
+from agents.orchestrator.llm import Llm
 
 
 class AgentRequest:
@@ -56,12 +56,7 @@ class AgentRequest:
             "NUM_OF_GROUPS" : self.number_of_groups
         }
 
-        selected_ids = llm(
-            prompt=self.prompt,
-            inputs=inputs,
-            asJSON=True,
-            observation_name="context_selection"
-        )
+        selected_ids = llm(prompt=self.prompt, inputs=inputs, asJSON=True)
         selected_context = [obj for obj in CONTEXT_GROUPS if obj.id in selected_ids]
 
         selection = ContextSelection.from_groups(selected_context=selected_context)

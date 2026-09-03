@@ -1,12 +1,9 @@
 from __future__ import annotations
-
 from enum import StrEnum
-from typing import TYPE_CHECKING, Self
-
+from typing import Self, TYPE_CHECKING
 from pydantic import Field
 
 from common.model_config import ConfiguredBaseModel
-
 if TYPE_CHECKING:
     from context.context_groups import ContextGroup
 
@@ -33,8 +30,8 @@ class ContextSelection(ConfiguredBaseModel):
     def from_groups(cls, selected_context: list[ContextGroup]) -> Self:
         combined_fields = list(
             dict.fromkeys(
-            field
-            for obj in selected_context
+            field 
+            for obj in selected_context 
             for field in obj.context.fields
             ))
 

@@ -1,6 +1,6 @@
     {
   "name": "Weather Agent",
-  "description": "Provides current weather conditions and short weather forecasts. Supports current position or a specified city and includes temperature, wind, visibility, rain information, and available weather alerts.",
+  "description": "Sub-agent for retrieving weather conditions, forecasts, and driving safety alerts.",
   "version": "1.0.0",
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
@@ -17,45 +17,16 @@
   ],
   "skills": [
     {
-      "id": "get-current-weather",
-      "name": "Get Current Weather Conditions",
-      "description": "Provides current weather for current position or a specified city, including temperature, feels-like temperature, conditions, wind speed, visibility, and available weather alerts.",
+      "id": "check-weather-and-forecast",
+      "name": "Check Weather Conditions and Forecast",
+      "description": "Provides current weather, forecasts, and driver safety warnings for current position or specified cities.",
       "input_modes": ["text/plain"],
       "output_modes": ["text/plain"],
-      "tags": [
-        "current weather",
-        "weather conditions",
-        "temperature",
-        "rain",
-        "wind",
-        "visibility",
-        "weather alert"
-      ],
+      "tags": ["weather", "forecast", "temperature", "rain", "road-conditions"],
       "examples": [
         "what is the weather in Warsaw?",
-        "tell me what the weather in London",
-        "is it raining near me?",
-        "what is the temperature in Berlin"
-      ]
-    },
-    {
-      "id": "get-weather-forecast",
-      "name": "Get Short Weather Forecast",
-      "description": "Provides a weather forecast for today, tomorrow, or the following days, up to three forecast days, for current position or a specified city.",
-      "input_modes": ["text/plain"],
-      "output_modes": ["text/plain"],
-      "tags": [
-        "weather forecast",
-        "tomorrow weather",
-        "rain forecast",
-        "temperature forecast",
-        "three day forecast"
-      ],
-      "examples": [
-        "what will the weather be tomorrow in Warsaw?",
-        "will it rain tomorrow in London?",
-        "give me a three day weather forecast for Berlin",
-        "what is the weather going to be like in 2 days?"
+        "is it going to rain near me?",
+        "what is the temperature in Kraków?"
       ]
     }
   ]

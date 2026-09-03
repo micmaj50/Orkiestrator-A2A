@@ -1,5 +1,6 @@
-import asyncio
-
+from langchain_core.messages import HumanMessage
+import httpx
+from a2a.client import A2ACardResolver, ClientConfig, create_client
 from a2a.helpers import (
     get_message_text,
     new_task_from_user_message,
@@ -9,46 +10,40 @@ from a2a.helpers import (
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import TaskState
-from langchain_core.messages import HumanMessage
-from langfuse import get_client, observe
-from langgraph.errors import GraphRecursionError
+from a2a.types import Role, SendMessageRequest, TaskState
+from utils.a2a_response import extract_artifact_text
+from langfuse import observe, get_client
 
 from agents.graph import graph
 from agents.state import GraphState
-from config import (
-    get_graph_recursion_limit,
-    get_request_timeout_seconds,
-)
 
 
 class Orchestrator:
     """Orchestrator backed by the LangGraph multi-agent graph."""
 
-    @observe(
-            name="orchestrator_invoke",
-            capture_input=False,
-            capture_output=False
-    )
+    @observe(name="orchestrator_invoke")
     async def invoke(self, user_request: str, thread_id: str) -> str:
-        user_msg = HumanMessage(content=user_request)
 
-        state = GraphState(
-            user_input=user_msg,
-            messages=[user_msg],
-            tasks=[],
-            )
+        config = {"configurable": {"thread_id": thread_id}}
 
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": get_graph_recursion_limit()}
 
-        # graph.ainvoke returns the final state as a dict-like mapping
-        # (channel name -> value) for a pydantic state schema.
-        #
-        # This is the outermost cap on the whole run, so a request can never hang.
-        result = await asyncio.wait_for(
-            graph.ainvoke(state, config),
-            timeout=get_request_timeout_seconds(),
-        )
+        state = await graph.aget_state(config)
+        is_paused = len(state.next) > 0 if state else False
+
+        if is_paused:
+
+            result = await graph.ainvoke(Command(resume=user_request), config)
+        else:
+   
+            initial_state = GraphState(user_input=HumanMessage(content=user_request))
+            result = await graph.ainvoke(initial_state, config)
+
+  
+        new_state = await graph.aget_state(config)
+        if new_state.next and new_state.tasks and new_state.tasks[0].interrupts:
+ 
+            return str(new_state.tasks[0].interrupts[0].value)
+
 
         if isinstance(result, GraphState):
             messages = result.messages
@@ -60,25 +55,100 @@ class Orchestrator:
             return str(getattr(final_message, 'content', final_message))
 
         return(
-                'Unsupported request\n'
-                'Try: "find closest gas stations"\n'
-                'Or:  "find closest food points"\n'
-                'Or:  "find parking nearby"'
+            'Unsupported request\n'
+            'Try: "find closest gas stations"\n'
+            'Or:  "find closest food points"\n'
+            'Or:  "find parking nearby"'
+        )
+
+    async def _call_sub_agent(self, user_request: str, agent_url: str) -> str:
+        """Send a request to a sub-agent and return its text response"""
+
+        client_lf = get_client()
+        current_trace_id = client_lf.get_current_trace_id()
+        current_span_id = client_lf.get_current_observation_id()
+         
+        # Resolve the agent card to discover its A2A interface and capabilities
+        async with httpx.AsyncClient() as httpx_client:
+            resolver = A2ACardResolver(
+                    httpx_client=httpx_client,
+                    base_url=agent_url,
+                    )
+            sub_agent_card = await resolver.get_agent_card()
+
+        # Create an A2A client from the card using the default client configuration
+        client_config = ClientConfig(streaming=False)
+        client = await create_client(
+                agent=sub_agent_card,
+                client_config=client_config,
                 )
 
+        try:
+            # Build and send the request as an A2A user message
+            message = new_text_message(
+                    user_request,
+                    role=Role.ROLE_USER,
+                    )
+            
+            if current_trace_id:
+                trace_data = {
+                    "langfuse_trace_id": current_trace_id,
+                    "langfuse_parent_observation_id": current_span_id or "",
+                }
+                
+                if message.metadata is None:
+                    message.metadata = {}
+
+                if hasattr(message.metadata, "update"):
+                    message.metadata.update(trace_data)
+                else:
+                    for k, v in trace_data.items():
+                        message.metadata[k] = v
+
+            request = SendMessageRequest(message=message)
+
+            extracted_texts: list[str] = []
+            # Iterate over the response chunks and extract text from each
+            async for chunk in client.send_message(request):
+                text = extract_artifact_text(chunk)
+                if text:
+                    extracted_texts.append(text)
+
+            if not extracted_texts:
+                return ''
+
+            return extracted_texts[-1]
+
+        finally:
+            await client.close()
+
+    def _format_result(self, agent_result: str) -> str:
+        """Format text extracted from the sub agent result for the orchestrator response"""
+
+        if not agent_result:
+            return 'Sub-agent returned no stations'
+
+        locations = [
+                location.strip()
+                for location in agent_result.replace('\n', ',').split(',')
+                if location.strip()
+                ]
+
+        if not locations:
+            return 'Sub-agent returned no stations'
+
+        locations_lines = '\n'.join(f'- {location}' for location in locations)
+
+        return f'Closest locations:\n{locations_lines}'
 
 class OrchestratorExecutor(AgentExecutor):
     """A2A executor for the orchestrator"""
-
+    
     def __init__(self) -> None:
         self.agent = Orchestrator()
 
     # Implement the execute method required by the AgentExecutor base class
-    @observe(
-            name="orchestrator_execute",
-            capture_input=False,
-            capture_output=False
-    )
+    @observe(name="orchestrator_execute")
     async def execute(
             self,
             context: RequestContext,
@@ -92,7 +162,6 @@ class OrchestratorExecutor(AgentExecutor):
             task = new_task_from_user_message(context.message)
             await event_queue.enqueue_event(task)
 
-
         # 2. Mark the task as working in EventQueue before invoking the orchestrator logic
         task_updater = TaskUpdater(
             event_queue=event_queue,
@@ -105,49 +174,40 @@ class OrchestratorExecutor(AgentExecutor):
             message=new_text_message('Orchestrator is processing request...'),
         )
 
-
         # 3. Extract the user's text and pass it to the orchestrator graph
         query = get_message_text(context.message)
-        langfuse = get_client()
-        langfuse.update_current_span(
-            input={"user_request": query}
+        if query:
+            thread_id = str(task.context_id or task.id)
+            result = await self.agent.invoke(user_request=query, thread_id=thread_id)
+        else:
+            result = 'No text input is provided!'
+
+        # 4. Add the orchestrator response as an artifact to EventQueue
+        await task_updater.add_artifact(
+            parts=[
+                new_text_part(
+                    text=result,
+                    media_type='text/plain'
+                )
+            ]
         )
-        try:
-            if query:
-                thread_id = task.context_id or str(task.id)
-                result = await self.agent.invoke(user_request=query, thread_id=thread_id)
-            else:
-                result = 'No text input is provided!'
+        print('Orchestrator result: ', result)
 
-            langfuse.update_current_span(
-                output={"response": result}
+  
+        config = {"configurable": {"thread_id": thread_id}}
+        graph_state = await graph.aget_state(config)
+
+        if graph_state and graph_state.next:
+
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_INPUT_REQUIRED,
+                message=new_text_message('Waiting for user input...'),
             )
+        else:
 
-            # 4. Add the orchestrator response as an artifact to EventQueue
-            await task_updater.add_artifact(
-                    parts=[
-                        new_text_part(
-                            text=result,
-                            media_type='text/plain'
-                            )
-                        ]
-                    )
-            print('Orchestrator result: ', result)
-
-            # 5. Update task status to completed
             await task_updater.update_status(
                 state=TaskState.TASK_STATE_COMPLETED,
                 message=new_text_message('Sub-agent request is completed!'),
-            )
-        except TimeoutError:
-            await task_updater.update_status(
-                state=TaskState.TASK_STATE_FAILED,
-                message=new_text_message('The request took too long and was stopped. Please try again.'),
-            )
-        except GraphRecursionError:
-            await task_updater.update_status(
-                state=TaskState.TASK_STATE_FAILED,
-                message=new_text_message('The request could not be completed. Please try rephrasing it.'),
             )
 
 

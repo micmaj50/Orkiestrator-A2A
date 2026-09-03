@@ -1,16 +1,14 @@
-from datetime import datetime
-from operator import attrgetter
-from typing import Any, Literal, Self
-
 from pydantic import Field
+from datetime import datetime
+from typing import Literal, Self, Any
+from operator import attrgetter
 
-from common.fuel import FuelType
-from common.location import Coordinates
-from common.model_config import ConfiguredBaseModel
-from common.tire_pressure import TirePressure
 from context.car import CarContext
 from context.context_selection import ContextSelection
-
+from common.model_config import ConfiguredBaseModel
+from common.fuel import FuelType
+from common.location import Coordinates
+from common.tire_pressure import TirePressure
 
 class AgentContext(ConfiguredBaseModel):
     fuel_type: FuelType | None = None
@@ -24,7 +22,7 @@ class AgentContext(ConfiguredBaseModel):
 
     cabin_temperature_c: float | None = Field(default=None)
     outside_temperature_c: float | None = Field(default=None)
-
+    
     ignition_state: Literal["OFF", "ACC", "ON", "STARTING"] | None = Field(default=None)
     odometer_km: float | None = Field(default=None, ge=0)
 
@@ -44,6 +42,3 @@ class AgentContext(ConfiguredBaseModel):
 
         return cls.model_validate(values)
     
-    def get_context_for_query(self) -> str:
-        context = self.model_dump_json(exclude_none=True)
-        return f" Current car metrics: {context}"

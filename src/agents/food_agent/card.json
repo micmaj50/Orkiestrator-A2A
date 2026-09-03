@@ -1,6 +1,6 @@
 {
   "name": "Food Agent",
-  "description": "Finds restaurants and dining options. Searches near current position or a specified location and optionally filters results by cuisine or food type.",
+  "description": "Sub-agent for finding food and drink options based on cuisine preference and location constraints.",
   "version": "1.0.0",
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
@@ -19,26 +19,14 @@
     {
       "id": "find-restaurants-and-dining",
       "name": "Find Restaurants and Dining Options",
-      "description": "Finds nearby restaurants, cafes, and dining options around current position or a specified city, address, or landmark. Supports cuisine or food filters such as pizza, sushi, Chinese, vegan, and fast food.",
+      "description": "Finds restaurants, cafes, and dining options near the vehicle or a specified location with optional cuisine filters.",
       "input_modes": ["text/plain"],
       "output_modes": ["text/plain"],
-      "tags": [
-        "restaurant search",
-        "nearby restaurants",
-        "food",
-        "dining",
-        "cuisine",
-        "cafe",
-        "pizza",
-        "fast food"
-
-      ],
+      "tags": ["food", "restaurants", "dining", "cuisine"],
       "examples": [
-        "find restaurants in Warsaw",
-        "find some restaurants near me",
-        "find pizza restaurants in London",
-        "what are the closest American restaurants?",
-        "find some good sushi in Berlin"
+        "find some good sushi nearby",
+        "I want to eat pizza in Radom",
+        "find a restaurant near Berlin"
       ]
     }
   ]

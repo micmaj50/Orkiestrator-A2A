@@ -1,18 +1,14 @@
-import json
-from datetime import datetime
-
 import pytest
-from dotenv import load_dotenv
+import json
 
-from agents.orchestrator.llm import Llm
+from contracts.agent_request import AgentRequest
+from context.car import VehicleProfile, VehicleTelemetry, CarContext
+from context.context_groups import CONTEXT_GROUPS
 from common.fuel import FuelType
 from common.location import Coordinates
 from common.tire_pressure import TirePressure
-from context.car import CarContext, VehicleProfile, VehicleTelemetry
-from context.context_groups import CONTEXT_GROUPS
-from contracts.agent_request import AgentRequest
-
-load_dotenv()
+from datetime import datetime
+from agents.orchestrator.llm import Llm
 
 vp = VehicleProfile(fuel_type=FuelType.PETROL_95,
                     tank_capacity=40.0)

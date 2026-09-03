@@ -1,6 +1,6 @@
 {
   "name": "Gas Station Agent",
-  "description": "Finds nearby gas stations, petrol stations and fuel stations. Searches around current location or a specified city, address, street, or landmark and returns station names and addresses.",
+  "description": "Sub-agent for geocoding and discovering nearby gas stations.",
   "version": "1.0.0",
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
@@ -17,25 +17,15 @@
   ],
   "skills": [
     {
-      "id": "find-gas-station",
-      "name": "Find Nearby Gas and Fuel Stations",
-      "description": "Finds the closest gas, petrol and fuel stations near current position or a specified location. Supports an optional search radius and returns station names and addresses.",
+      "id": "find_closest_gas_station",
+      "name": "Find Closest Gas Stations",
+      "description": "Finds the nearest gas stations, using either the car location or a specified location.",
       "input_modes": ["text/plain"],
       "output_modes": ["text/plain"],
-      "tags": [
-        "gas station",
-        "petrol station",
-        "fuel station",
-        "gasoline",
-        "diesel",
-        "location search"
-      ],
+      "tags": ["gas-stations"],
       "examples": [
-        "find gas stations in Warsaw",
-        "find fuel stations within 5 km",
-        "where is the nearest gas station?",
-        "find the closest gas station near me",
-        "find a petrol station near Big Ben"
+        "find the closest gas stations",
+        "find a gas station near Big Ben"
       ]
     }
   ]

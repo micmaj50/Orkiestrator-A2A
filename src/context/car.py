@@ -53,32 +53,3 @@ class CarContext(ConfiguredBaseModel):
 
     profile: VehicleProfile
     telemetry: VehicleTelemetry
-
-def create_mock_car(
-        current_location = Coordinates(latitude=53.4289, longitude=14.5530),
-        remaining_range_km = 100.0,
-        observed_at = datetime.now(),
-) -> CarContext:
-    vp = VehicleProfile(fuel_type=FuelType.PETROL_95,
-                        tank_capacity=40.0)
-    vt = VehicleTelemetry(current_location=current_location,
-                        remaining_range_km=remaining_range_km,
-                        tire_pressure=TirePressure(
-                            front_left=30,
-                            front_right=30,
-                            rear_left=30,
-                            rear_right=30,
-                            unit='psi'
-                        ),
-                        speed_kmh=60,
-                        observed_at=observed_at,
-                        cabin_temperature_c=20,
-                        outside_temperature_c=30,
-                        ignition_state='ON',
-                        odometer_km=123456.7)
-
-    car_context = CarContext(
-        profile=vp,
-        telemetry=vt)
-
-    return car_context

@@ -1,7 +1,8 @@
 import os
-from typing import Any, Dict, Literal, Optional
-
+from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field
 import httpx
+from dotenv import load_dotenv
 from a2a.helpers import (
     get_message_text,
     new_task_from_user_message,
@@ -12,21 +13,10 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
-from dotenv import load_dotenv
-from langfuse import get_client, observe
-from openai import AsyncOpenAI  # type: ignore
-from pydantic import BaseModel, Field
-
-from config import (
-    get_external_api_timeout_seconds,
-    get_llm_max_output_tokens,
-    get_llm_max_retries,
-    get_llm_timeout_seconds,
-)
+from langfuse.openai import AsyncOpenAI # type: ignore
+from langfuse import observe
 
 load_dotenv()
-
-langfuse = get_client()
 
 
 class ParkingSearchParams(BaseModel):
@@ -37,7 +27,7 @@ class ParkingSearchParams(BaseModel):
         )
     )
     target_location: Optional[str] = Field(
-        default=None,
+        default=None, 
         description=(
             "A specific location provided by the driver to search parking around. "
             "Can be a city (e.g., 'Kraków'), a street (e.g., 'Floriańska'), "
@@ -47,68 +37,40 @@ class ParkingSearchParams(BaseModel):
         )
     )
     search_radius_meters: int = Field(
-        default=3000,
+        default=3000, 
         description=(
             "The search radius in meters. Convert spoken distance units (e.g., 'within 5km') "
             "to integer meters (5000). Default to 3000 if not specified by the driver."
         )
     )
 
-@observe(
-        name="extract_parking_search_params",
-        as_type="generation",
-        capture_input=False,
-        capture_output=False
-)
+@observe(name="extract_parking_search_params")
 async def extract_parking_search_params(driver_command: str) -> ParkingSearchParams:
     """Extracts structured search parameters from the driver's command using LLM."""
-    client = AsyncOpenAI(
-        timeout=get_llm_timeout_seconds(),
-        max_retries=get_llm_max_retries(),
-    )
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an NLP analysis module inside an in-car voice assistant system. "
-                "Your sole task is to extract parking search parameters "
-                "from the driver's spoken command and map them into the requested JSON schema."
-            )
-        },
-        {
-            "role": "user",
-            "content": driver_command
-        }
-    ]
-
-    completion = await client.chat.completions.parse(
+    client = AsyncOpenAI()
+    
+    completion = await client.beta.chat.completions.parse(
         model="gpt-4o-mini",
-        messages=messages,
+        messages=[
+            {
+                "role": "system", 
+                "content": (
+                    "You are an NLP analysis module inside an in-car voice assistant system. "
+                    "Your sole task is to extract parking search parameters "
+                    "from the driver's spoken command and map them into the requested JSON schema."
+                )
+            },
+            {
+                "role": "user", 
+                "content": driver_command
+            }
+        ],
         response_format=ParkingSearchParams,
-        temperature=0.0,
-        max_tokens=get_llm_max_output_tokens(),
+        temperature=0.0
     )
+    return completion.choices[0].message.parsed
 
-    parsed = completion.choices[0].message.parsed
 
-    langfuse.update_current_generation(
-        input=messages,
-        output = parsed.model_dump(mode="json", exclude_none=True) if parsed is not None else None,
-        model=completion.model,
-        usage_details = completion.usage.model_dump(exclude_none=True) if completion.usage is not None else {}
-    )
-
-    if parsed is None:
-        raise ValueError("The model did not return valid parking search parameters.")
-
-    return parsed
-
-@observe(
-        name="google_places_parking_search",
-        as_type="tool",
-        capture_input=False,
-        capture_output=False
-)
 async def search_parking_google(
     api_key: str,
     target_location: Optional[str] = None,
@@ -146,60 +108,45 @@ async def search_parking_google(
     else:
         raise ValueError("Either target_location or coordinates (lat, lng, radius) must be provided.")
 
-    endpoint = url.removeprefix("https://places.googleapis.com/v1/")
-    span_metadata = {
-        "provider": "google_places_api",
-        "endpoint": endpoint,
-        "http_method": "POST"
-    }
-    langfuse.update_current_span(input=payload, metadata=span_metadata)
-
-    async with httpx.AsyncClient(timeout=get_external_api_timeout_seconds()) as client:
+    async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.post(url, json=payload, headers=headers)
-        langfuse.update_current_span(metadata={**span_metadata, "status_code": response.status_code})
         response.raise_for_status()
-        raw_response = response.json()
-        langfuse.update_current_span(output=raw_response)
-        return raw_response
+        return response.json()
 
 
 class MockParkingAgent:
     """Mock version of ParkingAgent for offline testing."""
 
-    @observe(
-            name="mock_parking_agent_invoke",
-            capture_input=False,
-            capture_output=False
-    )
+    @observe(name="mock_parking_agent_invoke")
     async def invoke(
-        self,
-        user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
+        self, 
+        user_request: str, 
+        car_lat: Optional[float] = None, 
+        car_lng: Optional[float] = None,
+        langfuse_trace_id: Optional[str] = None,
+        langfuse_parent_observation_id: Optional[str] = None,
     ) -> str:
         return (
             "[MOCK] I found the following parking options near your current location:\n"
-            "1. Example Parking - Testowa 19, Test City, Poland\n"
-            "2. Mock Parking Garage - Przykładowa 39, Test City, Poland\n"
-            "3. Demo Car Park - Testowa 77,  Test City, Poland\n"
-            "4. Sample Underground Parking - Mockowa 80, Test City, Poland\n"
-            "5. Test Parking Area - Wymyślona 44, Test City, Poland"
+            "1. Parking Stadion Narodowy - aleja Zieleniecka 6, 03-727 Warszawa, Poland\n"
+            "2. Torwar - 00-456 Warsaw, Poland\n"
+            "3. Campanile Warszawa - Towarowa 2, 00-811 Warszawa, Poland\n"
+            "4. Parking Łazienki Królewskie - Parkowa 23, 00-759 Warszawa, Poland\n"
+            "5. Parking in the Old Town - Unnamed Road, 00-001 Warszawa, Poland"
         )
 
 
 class ParkingAgent:
     """Sub-agent that resolves constraints and fetches parking places using Google Places API."""
 
-    @observe(
-            name="parking_agent_invoke",
-            capture_input=False,
-            capture_output=False
-    )
+    @observe(name="parking_agent_invoke")
     async def invoke(
-        self,
-        user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
+        self, 
+        user_request: str, 
+        car_lat: Optional[float] = None, 
+        car_lng: Optional[float] = None,
+        langfuse_trace_id: Optional[str] = None,
+        langfuse_parent_observation_id: Optional[str] = None,
     ) -> str:
         try:
             search_params = await extract_parking_search_params(user_request)
@@ -260,15 +207,29 @@ class ParkingAgentExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
 
-        metadata = context.message.metadata
-        trace_context = None
+        incoming_trace_id: Optional[str] = None
+        incoming_parent_id: Optional[str] = None
 
-        if "langfuse_trace_id" in metadata and "langfuse_parent_observation_id" in metadata:
-            trace_context = {
-                "trace_id": metadata["langfuse_trace_id"],
-                "parent_span_id": metadata["langfuse_parent_observation_id"]
-            }
+        if hasattr(context.message, "metadata") and context.message.metadata:
+            meta = context.message.metadata
+            val_trace = None
+            val_parent = None
 
+            if hasattr(meta, "get"):
+                val_trace = meta.get("langfuse_trace_id")
+                val_parent = meta.get("langfuse_parent_observation_id")
+            else:
+                try:
+                    val_trace = meta["langfuse_trace_id"]
+                    val_parent = meta["langfuse_parent_observation_id"]
+                except (KeyError, TypeError):
+                    pass
+
+            if val_trace is not None:
+                incoming_trace_id = str(val_trace)
+            if val_parent is not None:
+                incoming_parent_id = str(val_parent)
+        
         # Reuse the current task or create one for a new request
         if context.current_task:
             task = context.current_task
@@ -278,8 +239,8 @@ class ParkingAgentExecutor(AgentExecutor):
 
         # Mark the task as working in EventQueue
         task_updater = TaskUpdater(
-            event_queue=event_queue,
-            task_id=task.id,
+            event_queue=event_queue, 
+            task_id=task.id, 
             context_id=task.context_id
         )
         await task_updater.update_status(
@@ -289,23 +250,20 @@ class ParkingAgentExecutor(AgentExecutor):
 
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
-
+        
         # Change this if the Orchestrator sends car GPS in a different field.
         # Currently defaults to Warsaw Center coordinates as a fallback mock.
         car_lat = getattr(context, 'car_lat', 52.2297)
         car_lng = getattr(context, 'car_lng', 21.0122)
 
         if query:
-            with langfuse.start_as_current_observation(
-                name="parking_agent_execute",
-                as_type="span",
-                trace_context=trace_context
-            ):
-                result = await self.agent.invoke(
-                    user_request=query,
-                    car_lat=car_lat,
-                    car_lng=car_lng
-                )
+            result = await self.agent.invoke(
+                user_request=query, 
+                car_lat=car_lat, 
+                car_lng=car_lng,
+                langfuse_trace_id=incoming_trace_id,
+                langfuse_parent_observation_id=incoming_parent_id
+            )
         else:
             result = 'No text input is provided!'
 
@@ -313,7 +271,7 @@ class ParkingAgentExecutor(AgentExecutor):
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result,
+                    text=result, 
                     media_type='text/plain'
                 )
             ]

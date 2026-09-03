@@ -1,6 +1,6 @@
 {
   "name": "Parking Agent",
-  "description": "Finds parking lots, car parks, and parking garages. Searches near the current position or a specified city, address, street, or landmark.",
+  "description": "Sub-agent for finding parking options based on location constraints.",
   "version": "1.0.0",
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
@@ -17,28 +17,16 @@
   ],
   "skills": [
     {
-      "id": "find-parking",
-      "name": "Find Nearby Parking",
-      "description": "Finds parking lots, car parks, parking spaces, and parking garages near current position or a specified location. Supports an optional search radius and returns parking names and addresses.",
+      "id": "find-parking-lots",
+      "name": "Find Parking Lots and Spaces",
+      "description": "Finds parking lots, garages, and parking spaces near the vehicle or a specified location.",
       "input_modes": ["text/plain"],
       "output_modes": ["text/plain"],
-      "tags": [
-        "parking",
-        "parking lot",
-        "parking garage",
-        "vehicle",
-        "car park",
-        "location",
-        "nearby parking",
-        "location search"
-      ],
+      "tags": ["parking", "garage", "vehicle", "location"],
       "examples": [
-        "find parking in Warsaw",
         "find parking near my current location",
-        "where can I park near Wawel Castle?",
-        "find a parking space within 2km",
-        "find places where I can park my car near me",
-        "find a parking garage in London"
+        "where can I park near Wawel Castle in Krakow",
+        "find a parking space within 2km"
       ]
     }
   ]
