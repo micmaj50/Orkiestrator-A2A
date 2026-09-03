@@ -1,5 +1,5 @@
 import multiprocess
-from a2a.types import AgentCard
+from a2a.types import AgentCard, TaskState
 from langchain_core.messages import AIMessage
 from langfuse import observe
 from langgraph.checkpoint.memory import InMemorySaver
@@ -176,10 +176,19 @@ async def agent_node(state: GraphState) -> dict:
                 query = task.query or str(state.user_input.content)
                 if task.context is not None:
                     query += task.context.get_context_for_query()
-                result = await call_sub_agent(query, agent_url(card))
+                task_state, text = await call_sub_agent(query, agent_url(card))
 
-                task.status = WorkItemStatus.COMPLETED
-                task.result = result
+                # How the sub-agent ended is what the work item is worth. Every
+                # answer that came back at all used to count as a completed one.
+                if task_state == TaskState.TASK_STATE_COMPLETED:
+                    task.status = WorkItemStatus.COMPLETED
+                elif task_state == TaskState.TASK_STATE_INPUT_REQUIRED:
+                    task.status = WorkItemStatus.NEED_CONTEXT
+                else:
+                    # Failed, rejected, cancelled, auth required.
+                    task.status = WorkItemStatus.FAILED
+
+                task.result = text
 
             except Exception as exc:
                 task.status = WorkItemStatus.FAILED
@@ -199,14 +208,14 @@ async def agent_node(state: GraphState) -> dict:
 async def response_synthesizer_node(state: GraphState) -> dict:
     """
     Response synthesizer node that asks the LLM (Synthesizer) to combine the
-    sub-agent only COMPLETED and FAILED task results into a final message.
+    finished sub-agent results into a final message.
     """
 
     global llm
 
-    valid_tasks = [t for t in state.tasks if t.status in (WorkItemStatus.COMPLETED, WorkItemStatus.FAILED)]
-
-    if not valid_tasks:
+    # The synthesizer reads the results, so having one is what matters here.
+    # Filtering by status instead let a task with an empty result through.
+    if not any(task.result for task in state.tasks):
         message = "I couldn't handle that request. Please try again or ask for something else."
         return {'messages': [AIMessage(content=message)]}
 

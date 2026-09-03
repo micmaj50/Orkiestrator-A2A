@@ -2,7 +2,7 @@ from langchain_core.messages import get_buffer_string
 from langchain_core.prompts import PromptTemplate
 
 from agents.orchestrator.llm import Llm
-from agents.state import GraphState, WorkItemStatus
+from agents.state import GraphState
 
 
 class Synthesizer:
@@ -12,6 +12,11 @@ class Synthesizer:
         self.template_string = """
         You are a synthesis agent. Combine the data from our agents into a simple summary for a human.
         Use the conversation history to understand context (e.g., what "there" or "that place" refers to).
+
+        Each output is tagged with what it is worth: [completed] is an answer,
+        [need_context] means the agent needs something from the driver, and
+        [failed] means that part could not be handled - say so plainly, and
+        never present it as an answer.
 
         {system_warning}
 
@@ -37,8 +42,8 @@ class Synthesizer:
             request = str(state.user_input.content)
 
         answers = "\n".join(
-            f"Result from {task.assigned_agent}: {task.result}"
-            for task in state.tasks if task.status in (WorkItemStatus.COMPLETED, WorkItemStatus.FAILED) and task.result
+            f"Result from {task.assigned_agent} [{task.status.value}]: {task.result}"
+            for task in state.tasks if task.result
         )
 
         conversation_history = get_buffer_string(state.messages[-10:])

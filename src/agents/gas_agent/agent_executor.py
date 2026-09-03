@@ -223,9 +223,9 @@ class MockGasStationAgent:
         user_request: str,
         car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
-    ) -> str:
+    ) -> tuple[TaskState, str]:
 
-        return (
+        return TaskState.TASK_STATE_COMPLETED, (
             "[MOCK] I found the following gas stations near your location:\n"
             "1. Example Fuel Station - Testowa 15, Test City, Poland\n"
             "2. Mock Fuel Point - Przykładowa 28, Test City, Poland\n"
@@ -251,7 +251,7 @@ class GasStationAgent:
         user_request: str,
         car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
-    ) -> str:
+    ) -> tuple[TaskState, str]:
         try:
             # Extract parameters using OpenAI
             search_params = await extract_gas_search_params(user_request)
@@ -259,16 +259,16 @@ class GasStationAgent:
             if search_params.provider == "google":
                 google_api_key = os.environ.get("GOOGLE_API_KEY")
                 if not google_api_key:
-                    return "Error: GOOGLE_API_KEY environment variable is missing on the server."
+                    return TaskState.TASK_STATE_FAILED, "Error: GOOGLE_API_KEY environment variable is missing on the server."
                 return await self._search_via_google(search_params, car_lat, car_lng, google_api_key)
             else:
                 here_api_key = os.environ.get("HERE_API_KEY")
                 if not here_api_key:
-                    return "Error: HERE_API_KEY environment variable is missing on the server."
+                    return TaskState.TASK_STATE_FAILED, "Error: HERE_API_KEY environment variable is missing on the server."
                 return await self._search_via_here(search_params, car_lat, car_lng, here_api_key)
 
         except Exception as e:
-            return f"An error occurred while processing the request: {str(e)}"
+            return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the request: {str(e)}"
 
 
     async def _search_via_google(
@@ -277,11 +277,11 @@ class GasStationAgent:
         car_lat: Optional[float],
         car_lng: Optional[float],
         api_key: str,
-    ) -> str:
+    ) -> tuple[TaskState, str]:
         """Executes search using Google Places API."""
         if search_params.use_current_location:
             if car_lat is None or car_lng is None:
-                return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+                return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot perform a local search because the vehicle's current GPS data is unavailable."
             raw_results = await search_gas_google(
                 api_key=api_key,
                 lat=car_lat,
@@ -291,7 +291,7 @@ class GasStationAgent:
             location_name = "your current location"
         else:
             if not search_params.target_location:
-                return "Sorry, I couldn't understand the target location for the gas station search."
+                return TaskState.TASK_STATE_INPUT_REQUIRED, "Sorry, I couldn't understand the target location for the gas station search."
             raw_results = await search_gas_google(
                 api_key=api_key,
                 target_location=search_params.target_location,
@@ -299,8 +299,9 @@ class GasStationAgent:
             location_name = f"'{search_params.target_location}'"
 
         places = raw_results.get("places", [])
+
         if not places:
-            return f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
+            return TaskState.TASK_STATE_COMPLETED, f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
 
         response_lines = [f"I found the following gas stations near {location_name}:"]
         for i, place in enumerate(places, 1):
@@ -308,7 +309,7 @@ class GasStationAgent:
             address = place.get("formattedAddress", "No address available")
             response_lines.append(f"{i}. {name} - {address}")
 
-        return "\n".join(response_lines)
+        return TaskState.TASK_STATE_COMPLETED, "\n".join(response_lines)
 
 
     async def _search_via_here(
@@ -317,20 +318,22 @@ class GasStationAgent:
         car_lat: Optional[float],
         car_lng: Optional[float],
         api_key: str,
-    ) -> str:
+    ) -> tuple[TaskState, str]:
         """Executes search using HERE API."""
         # Resolve Location to Coordinates
         if search_params.use_current_location:
             if car_lat is None or car_lng is None:
-                return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+                return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot perform a local search because the vehicle's current GPS data is unavailable."
             target_lat, target_lng = car_lat, car_lng
             location_name = "your current location"
         else:
             try:
                 target_lat, target_lng = await geocode_location_here(search_params.target_location, api_key)
                 location_name = f"'{search_params.target_location}'"
-            except Exception as e:
-                return f"Sorry, I couldn't find the location {search_params.target_location}. Please try specifying a different landmark or city."
+            except Exception:
+                # A place nobody can resolve: the request is short of usable
+                # input rather than broken.
+                return TaskState.TASK_STATE_INPUT_REQUIRED, f"Sorry, I couldn't find the location {search_params.target_location}. Please try specifying a different landmark or city."
 
         # Fetch Data from HERE API
         raw_results = await search_gas_here(
@@ -357,7 +360,7 @@ class GasStationAgent:
         items = filtered_items
 
         if not items:
-            return f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
+            return TaskState.TASK_STATE_COMPLETED, f"I couldn't find any gas stations within {search_params.search_radius_meters} meters around {location_name}."
 
         # Format output into a clean plain text string for A2A pipeline
         response_lines = [f"I found the following gas stations near {location_name}:"]
@@ -373,7 +376,7 @@ class GasStationAgent:
 
             response_lines.append(f"{i}. {name} - {address} ({distance_str})")
 
-        return "\n".join(response_lines)
+        return TaskState.TASK_STATE_COMPLETED, "\n".join(response_lines)
 
 
 class GasStationAgentExecutor(AgentExecutor):
@@ -427,27 +430,27 @@ class GasStationAgentExecutor(AgentExecutor):
                 as_type="span",
                 trace_context=trace_context
             ):
-                result = await self.agent.invoke(
+                state, text = await self.agent.invoke(
                     user_request=query,
                     car_lat=car_lat,
                     car_lng=car_lng
                 )
         else:
-            result = 'No text input is provided!'
+            state, text = TaskState.TASK_STATE_FAILED, 'No text input is provided!'
 
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result,
+                    text=text,
                     media_type='text/plain'
                 )
             ]
         )
-        print('GasStationAgent result: ', result)
+        print('GasStationAgent result: ', TaskState.Name(state), text)
 
         await task_updater.update_status(
-            state=TaskState.TASK_STATE_COMPLETED,
-            message=new_text_message('Gas station request is completed!'),
+            state=state,
+            message=new_text_message(text),
         )
 
 

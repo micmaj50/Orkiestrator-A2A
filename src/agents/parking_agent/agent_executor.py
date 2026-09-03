@@ -176,8 +176,8 @@ class MockParkingAgent:
         user_request: str,
         car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
-    ) -> str:
-        return (
+    ) -> tuple[TaskState, str]:
+        return TaskState.TASK_STATE_COMPLETED, (
             "[MOCK] I found the following parking options near your current location:\n"
             "1. Example Parking - Testowa 19, Test City, Poland\n"
             "2. Mock Parking Garage - Przykładowa 39, Test City, Poland\n"
@@ -200,17 +200,17 @@ class ParkingAgent:
         user_request: str,
         car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
-    ) -> str:
+    ) -> tuple[TaskState, str]:
         try:
             search_params = await extract_parking_search_params(user_request)
 
             google_api_key = os.environ.get("GOOGLE_API_KEY")
             if not google_api_key:
-                return "Error: GOOGLE_API_KEY environment variable is missing on the server."
+                return TaskState.TASK_STATE_FAILED, "Error: GOOGLE_API_KEY environment variable is missing on the server."
 
             if search_params.use_current_location:
                 if car_lat is None or car_lng is None:
-                    return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+                    return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot perform a local search because the vehicle's current GPS data is unavailable."
 
                 raw_results = await search_parking_google(
                     lat=car_lat,
@@ -221,7 +221,7 @@ class ParkingAgent:
                 location_name = "your current location"
             else:
                 if not search_params.target_location:
-                    return "Sorry, I couldn't understand the target location for parking."
+                    return TaskState.TASK_STATE_INPUT_REQUIRED, "Sorry, I couldn't understand the target location for parking."
 
                 raw_results = await search_parking_google(
                     target_location=search_params.target_location,
@@ -232,7 +232,7 @@ class ParkingAgent:
             places = raw_results.get("places", [])
 
             if not places:
-                return f"I couldn't find any parking lots within {search_params.search_radius_meters} meters around {location_name}."
+                return TaskState.TASK_STATE_COMPLETED, f"I couldn't find any parking lots within {search_params.search_radius_meters} meters around {location_name}."
 
             response_lines = [
                 f"I found the following parking options near {location_name}:"
@@ -242,10 +242,10 @@ class ParkingAgent:
                 address = place.get("formattedAddress", "No address available")
                 response_lines.append(f"{i}. {name} - {address}")
 
-            return "\n".join(response_lines)
+            return TaskState.TASK_STATE_COMPLETED, "\n".join(response_lines)
 
         except Exception as e:
-            return f"An error occurred while processing the request: {str(e)}"
+            return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the request: {str(e)}"
 
 
 class ParkingAgentExecutor(AgentExecutor):
@@ -301,29 +301,29 @@ class ParkingAgentExecutor(AgentExecutor):
                 as_type="span",
                 trace_context=trace_context
             ):
-                result = await self.agent.invoke(
+                state, text = await self.agent.invoke(
                     user_request=query,
                     car_lat=car_lat,
                     car_lng=car_lng
                 )
         else:
-            result = 'No text input is provided!'
+            state, text = TaskState.TASK_STATE_FAILED, 'No text input is provided!'
 
         # Add the agent response as a task artifact to EventQueue
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result,
+                    text=text,
                     media_type='text/plain'
                 )
             ]
         )
-        print('ParkingAgent result: ', result)
+        print('ParkingAgent result: ', TaskState.Name(state), text)
 
         # Mark the task as completed
         await task_updater.update_status(
-            state=TaskState.TASK_STATE_COMPLETED,
-            message=new_text_message('Parking request is completed!'),
+            state=state,
+            message=new_text_message(text),
         )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

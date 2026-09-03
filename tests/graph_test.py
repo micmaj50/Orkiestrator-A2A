@@ -11,6 +11,7 @@ from agents import graph as graph_module
 from agents.graph import graph, route_from_orchestrator
 from agents.state import GraphState, WorkItem, WorkItemStatus
 from config import get_agent_url
+from a2a.types import TaskState
 
 FINAL_ANSWER = 'Final answer for the driver.'
 FALLBACK = "I couldn't handle that request."
@@ -54,17 +55,18 @@ class FakeLlm:
 class FakeSubAgents:
     """Replaces `call_sub_agent`: records the query and the target URL."""
 
-    def __init__(self, broken_url: str | None = None):
+    def __init__(self, broken_url: str | None = None, result: tuple | None = None):
         self.calls: list[tuple[str, str]] = []
         self.broken_url = broken_url
+        self.result = result
 
-    async def __call__(self, user_request: str, agent_url: str) -> str:
+    async def __call__(self, user_request: str, agent_url: str) -> tuple:
         self.calls.append((user_request, agent_url))
 
         if agent_url == self.broken_url:
             raise RuntimeError('sub-agent is down')
 
-        return f'answer from {agent_url}'
+        return self.result or (TaskState.TASK_STATE_COMPLETED, f'answer from {agent_url}')
 
 
 def task(agent: str, query: str | None = None, task_id=1) -> dict:
@@ -77,9 +79,10 @@ def task(agent: str, query: str | None = None, task_id=1) -> dict:
 def run_flow(monkeypatch):
     """Wire the fakes into the graph module and run the graph."""
 
-    def _run(user_request: str, tasks: list[dict], broken_url: str | None = None, thread_id: str | None = None):
+    def _run(user_request: str, tasks: list[dict], broken_url: str | None = None, thread_id: str | None = None,
+             sub_agent_result: tuple | None = None):
         llm = FakeLlm(tasks)
-        sub_agents = FakeSubAgents(broken_url)
+        sub_agents = FakeSubAgents(broken_url, sub_agent_result)
 
         # Build query→agent mapping so search_skill returns the delegator's
         # assignment without loading the real embedding model.
@@ -282,3 +285,21 @@ def test_route_from_orchestrator(tasks, expected):
     )
 
     assert route_from_orchestrator(state) == expected
+
+
+@pytest.mark.parametrize(('task_state', 'expected'), [
+    (TaskState.TASK_STATE_COMPLETED, WorkItemStatus.COMPLETED),
+    (TaskState.TASK_STATE_INPUT_REQUIRED, WorkItemStatus.NEED_CONTEXT),
+    (TaskState.TASK_STATE_FAILED, WorkItemStatus.FAILED),
+    (TaskState.TASK_STATE_REJECTED, WorkItemStatus.FAILED),
+])
+def test_how_the_sub_agent_ended_becomes_the_work_item_status(run_flow, task_state, expected):
+    """A sub-agent that answered is not a sub-agent that succeeded."""
+
+    result, _, _ = run_flow(
+        'find gas',
+        [task('gas_agent', 'find gas')],
+        sub_agent_result=(task_state, 'what the agent said'),
+    )
+
+    assert result['tasks'][0].status == expected

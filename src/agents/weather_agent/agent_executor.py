@@ -146,8 +146,8 @@ class MockWeatherAgent:
         user_request: str,
         car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
-    ) -> str:
-        return (
+    ) -> tuple[TaskState, str]:
+        return TaskState.TASK_STATE_COMPLETED, (
             "[MOCK] Weather in Test City: 23.3°C (feels like 22.7°C), partly cloudy. "
             "Wind: 14.8 km/h, visibility: 9.0 km."
         )
@@ -166,28 +166,28 @@ class WeatherAgent:
         user_request: str,
         car_lat: Optional[float] = None,
         car_lng: Optional[float] = None
-    ) -> str:
+    ) -> tuple[TaskState, str]:
         try:
             search_params = await extract_weather_search_params(user_request)
 
             weather_api_key = os.environ.get("WEATHER_API_KEY")
             if not weather_api_key:
-                return "Error: WEATHER_API_KEY environment variable is missing on the server."
+                return TaskState.TASK_STATE_FAILED, "Error: WEATHER_API_KEY environment variable is missing on the server."
 
             if search_params.use_current_location:
                 if car_lat is None or car_lng is None:
-                    return "I cannot fetch local weather because the vehicle's GPS data is unavailable."
+                    return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot fetch local weather because the vehicle's GPS data is unavailable."
                 query = f"{car_lat},{car_lng}"
             else:
                 if not search_params.target_location:
-                    return "Sorry, I couldn't understand the target location for the weather query."
+                    return TaskState.TASK_STATE_INPUT_REQUIRED, "Sorry, I couldn't understand the target location for the weather query."
                 query = search_params.target_location
 
             raw_data = await fetch_weather_data(query=query, days=search_params.days, api_key=weather_api_key)
-            return self._format_weather_response(raw_data, requested_days=search_params.days)
+            return TaskState.TASK_STATE_COMPLETED, self._format_weather_response(raw_data, requested_days=search_params.days)
 
         except Exception as e:
-            return f"An error occurred while processing the weather request: {str(e)}"
+            return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the weather request: {str(e)}"
 
 
     def _format_weather_response(self, data: Dict[str, Any], requested_days: int = 1) -> str:
@@ -289,27 +289,27 @@ class WeatherAgentExecutor(AgentExecutor):
                 as_type="span",
                 trace_context=trace_context
             ):
-                result = await self.agent.invoke(
+                state, text = await self.agent.invoke(
                     user_request=query,
                     car_lat=car_lat,
                     car_lng=car_lng
                 )
         else:
-            result = 'No text input is provided!'
+            state, text = TaskState.TASK_STATE_FAILED, 'No text input is provided!'
 
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=result,
+                    text=text,
                     media_type='text/plain'
                 )
             ]
         )
-        print('WeatherAgent result: ', result)
+        print('WeatherAgent result: ', TaskState.Name(state), text)
 
         await task_updater.update_status(
-            state=TaskState.TASK_STATE_COMPLETED,
-            message=new_text_message('Weather request is completed!'),
+            state=state,
+            message=new_text_message(text),
         )
 
 

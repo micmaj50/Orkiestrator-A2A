@@ -3,18 +3,22 @@
 import httpx
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, create_client
 from a2a.helpers import new_text_message
-from a2a.types import Role, SendMessageRequest
+from a2a.types import Role, SendMessageRequest, TaskState
 from langfuse import get_client
 
 from config import get_sub_agent_timeout_seconds
-from utils.a2a_response import extract_artifact_text
+from utils.a2a_response import extract_agent_result
 
 
 langfuse = get_client()
 
 
-async def call_sub_agent(user_request: str, agent_url: str) -> str:
-    """Send a text request to an A2A sub-agent and return its text response."""
+async def call_sub_agent(user_request: str, agent_url: str) -> tuple[TaskState, str]:
+    """Send a text request to an A2A sub-agent and return how it ended and what it said.
+
+    The state says whether the agent actually succeeded, so the caller never
+    has to read the text to find out.
+    """
 
     trace_id = langfuse.get_current_trace_id()
     parent_observation_id = langfuse.get_current_observation_id()
@@ -48,20 +52,26 @@ async def call_sub_agent(user_request: str, agent_url: str) -> str:
         # Build and send the request as an A2A user message
         request = SendMessageRequest(message=message)
 
-        extracted_texts: list[str] = []
-
         call_context = ClientCallContext(timeout=get_sub_agent_timeout_seconds())
 
-        # Iterate over the response chunks and extract text from each
+        result: tuple[TaskState, str] | None = None
+
+        # Every chunk carries the whole task, so the last terminal one wins.
+        # State and text come off the same chunk and cannot drift apart.
         async for chunk in client.send_message(request, context=call_context):
-            text = extract_artifact_text(chunk)
-            if text:
-                extracted_texts.append(text)
+            result = extract_agent_result(chunk) or result
 
-        if not extracted_texts:
-            return ''
+        if result is None:
+            return TaskState.TASK_STATE_FAILED, 'The sub-agent never reported a final state.'
 
-        return extracted_texts[-1]
+        state, text = result
+
+        # A success with nothing in it is a failure: passed on as an answer it
+        # leaves the synthesizer summarising an empty string.
+        if state == TaskState.TASK_STATE_COMPLETED and not text.strip():
+            return TaskState.TASK_STATE_FAILED, 'The sub-agent reported success but returned no answer.'
+
+        return state, text
 
     finally:
         await client.close()

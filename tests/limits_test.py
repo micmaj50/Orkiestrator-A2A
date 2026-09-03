@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+from a2a.types import TaskState
 
 import config
 from utils import a2a_client
@@ -75,9 +76,15 @@ class FakeSubAgentClient:
 
         class Artifact:
             parts = [Part()]
+            metadata = None
+
+        class Status:
+            state = TaskState.TASK_STATE_COMPLETED
+            message = None
 
         class Chunk:
             artifacts = [Artifact()]
+            status = Status()
 
         yield Chunk()
 
@@ -110,14 +117,13 @@ def test_sub_agent_call_carries_the_configured_timeout(monkeypatch, fake_sub_age
 
     result = asyncio.run(a2a_client.call_sub_agent('find gas', 'http://gas-agent:9998'))
 
-    assert result == 'answer from the sub-agent'
+    assert result == (TaskState.TASK_STATE_COMPLETED, 'answer from the sub-agent')
     assert [context.timeout for context in fake_sub_agent.contexts] == [42.0]
     assert fake_sub_agent.closed
 
 
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskState
 from langgraph.errors import GraphRecursionError
 
 from agents.orchestrator.agent_executor import OrchestratorExecutor
