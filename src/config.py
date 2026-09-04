@@ -50,7 +50,10 @@ DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_MAX_RETRIES = 1
 DEFAULT_EXTERNAL_API_TIMEOUT_SECONDS = 15.0
 DEFAULT_SUB_AGENT_TIMEOUT_SECONDS = 90.0
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 180.0
+
+# The orchestrator makes two model calls of its own around the sub-agent calls:
+# one to plan the work, one to synthesise the answer.
+GRAPH_LLM_CALLS_OUTSIDE_SUB_AGENTS = 2
 
 # How long we wait for one answer from the language model before giving up
 def get_llm_timeout_seconds() -> float:
@@ -81,10 +84,20 @@ def get_sub_agent_timeout_seconds() -> float:
     )
 
 
-# How long one whole user request may take, from the question to the final answer
+# How long one whole user request may take, from the question to the final answer.
+#
+# This is the outermost cap, so it has to leave room for every sub-agent to hit
+# its own timeout first. Firing before them kills the whole run and throws away
+# the answers that did come back, which is worse than letting one slow sub-agent
+# fail on its own. Tasks run one after another, so their budgets add up.
 def get_request_timeout_seconds() -> float:
+    default = (
+            get_max_tasks() * get_sub_agent_timeout_seconds()
+            + GRAPH_LLM_CALLS_OUTSIDE_SUB_AGENTS * get_llm_timeout_seconds()
+    )
+
     return float(
-            os.getenv("REQUEST_TIMEOUT_SECONDS", str(DEFAULT_REQUEST_TIMEOUT_SECONDS))
+            os.getenv("REQUEST_TIMEOUT_SECONDS", str(default))
     )
 
 
