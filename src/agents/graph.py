@@ -120,10 +120,11 @@ async def orchestrator_node(state: GraphState) -> dict:
         request = AgentRequest(user_input= str(state.user_input.content), task= query)
         context = request.select_context(car_context=car, llm=llm)
         
-        matched_agents = search_skill(qdrant_client, query_text=str(query))
-        agent = matched_agents
+        # One lookup per task: embedding the query is the expensive part.
         agent = search_skill(client, query_text=str(query))
 
+        # None means nothing was close enough, so the request is refused here
+        # rather than handed to whichever agent happened to be nearest.
         if agent not in get_sub_agent_cards():
             tasks.append(
                 WorkItem(

@@ -140,6 +140,24 @@ def get_graph_recursion_limit() -> int:
 
 
 
+# Routing limits.
+
+# Cosine similarity below which the nearest skill is not a real match.
+#
+# The vector search always returns its closest hit, however far away it is, so
+# without a floor a request no agent covers is answered by whichever agent
+# happened to be nearest. Every lookup logs its score, so tune this from real
+# traffic rather than from this starting point.
+DEFAULT_MIN_SKILL_SCORE = 0.5
+
+
+def get_min_skill_score() -> float:
+    return float(
+            os.getenv("MIN_SKILL_SCORE", str(DEFAULT_MIN_SKILL_SCORE))
+    )
+
+
+
 # Budget limits.
 # These limits bounds how much the model is allowed to write.
 

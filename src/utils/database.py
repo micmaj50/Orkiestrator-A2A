@@ -3,6 +3,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from FlagEmbedding import BGEM3FlagModel
 
+from config import get_min_skill_score
+
 
 COLLECTION_NAME = "agent_skills"
 
@@ -29,7 +31,8 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
     Returns
     -------
     str | None
-        The name of the best matching agent, or None if no matching point/payload is found.
+        The name of the best matching agent, or None when nothing is close
+        enough to count as a match.
     """
 
 
@@ -42,11 +45,23 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
         limit=1,
     )
 
-    if response.points and response.points[0].payload:
-        payload = response.points[0].payload
-        return payload.get("agent_name")
+    if not response.points:
+        return None
 
-    return None
+    best = response.points[0]
+    agent_name = best.payload.get("agent_name") if best.payload else None
+    minimum = get_min_skill_score()
+
+    # The search returns its nearest hit however far away it is, so a request
+    # no agent covers would otherwise be handed to whichever one was closest.
+    # Both branches log the score: that is the data the threshold is tuned on.
+    if agent_name is None or best.score < minimum:
+        print(f'search_skill: {query_text!r} -> no match (nearest {agent_name} at {best.score:.3f}, minimum {minimum})')
+        return None
+
+    print(f'search_skill: {query_text!r} -> {agent_name} ({best.score:.3f})')
+
+    return agent_name
 
 
 
