@@ -143,7 +143,7 @@ def get_graph_recursion_limit() -> int:
 # happened to be nearest. The right value depends on the embeddings and on what
 # the agent cards say, so this is a starting point to calibrate, not a measured
 # one.
-DEFAULT_MIN_SKILL_SCORE = 0.5
+DEFAULT_MIN_SKILL_SCORE = 0.2
 
 
 def get_min_skill_score() -> float:
