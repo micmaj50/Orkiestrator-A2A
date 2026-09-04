@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -107,7 +107,7 @@ async def extract_weather_search_params(driver_command: str) -> WeatherSearchPar
         capture_input=False,
         capture_output=False
 )
-async def fetch_weather_data(query: str, days: int, api_key: str) -> Dict[str, Any]:
+async def fetch_weather_data(query: str, days: int, api_key: str) -> dict[str, Any]:
     """Fetches weather data from WeatherAPI.com forecast endpoint."""
     url = "https://api.weatherapi.com/v1/forecast.json"
     request_params = {
@@ -190,7 +190,7 @@ class WeatherAgent:
             return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the weather request: {str(e)}"
 
 
-    def _format_weather_response(self, data: Dict[str, Any], requested_days: int = 1) -> str:
+    def _format_weather_response(self, data: dict[str, Any], requested_days: int = 1) -> str:
         """Formats weather JSON data into a concise text response tailored for drivers."""
         location = data.get("location", {})
         city_name = location.get("name", "your area")

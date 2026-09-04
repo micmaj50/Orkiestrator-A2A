@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -142,7 +142,7 @@ async def geocode_location_here(location: str, api_key: str) -> tuple[float, flo
         return position["lat"], position["lng"]
 
 
-async def search_food_here(lat: float, lng: float, query_text: Optional[str], api_key: str) -> Dict[str, Any]:
+async def search_food_here(lat: float, lng: float, query_text: Optional[str], api_key: str) -> dict[str, Any]:
     """
     Searches for restaurants around coordinates using HERE Discover API.
     """
@@ -176,7 +176,7 @@ async def search_food_google(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Searches for restaurants using Google Places API (New) searchText endpoint."""
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
@@ -186,7 +186,7 @@ async def search_food_google(
     }
 
     food_query = cuisine_or_type if cuisine_or_type else "restaurant"
-    payload: Dict[str, Any] = {"maxResultCount": 5}
+    payload: dict[str, Any] = {"maxResultCount": 5}
 
     if target_location:
         payload["textQuery"] = f"{food_query} near {target_location}"

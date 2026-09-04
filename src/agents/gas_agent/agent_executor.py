@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -132,7 +132,7 @@ async def geocode_location_here(location: str, api_key: str) -> tuple[float, flo
         return position["lat"], position["lng"]
 
 
-async def search_gas_here(lat: float, lng: float, radius: int, api_key: str) -> Dict[str, Any]:
+async def search_gas_here(lat: float, lng: float, radius: int, api_key: str) -> dict[str, Any]:
     """Searches for gas/petrol stations around coordinates using HERE Browse API."""
     url = "https://browse.search.hereapi.com/v1/browse"
     params = {
@@ -162,7 +162,7 @@ async def search_gas_google(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Searches for gas stations using Google Places API (New)."""
     headers = {
         "Content-Type": "application/json",

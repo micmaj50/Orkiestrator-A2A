@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -115,7 +115,7 @@ async def search_parking_google(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Searches for parking places using Google Places API."""
     headers = {
         "Content-Type": "application/json",
