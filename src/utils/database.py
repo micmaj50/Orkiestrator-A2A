@@ -43,25 +43,17 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
         collection_name=COLLECTION_NAME,
         query=query_vector,
         limit=1,
+        # Without a floor the nearest skill comes back however far away it is,
+        # so a request no agent covers gets answered by whichever agent
+        # happened to be closest.
+        score_threshold=get_min_skill_score(),
     )
 
-    if not response.points:
-        return None
+    if response.points and response.points[0].payload:
+        payload = response.points[0].payload
+        return payload.get("agent_name")
 
-    best = response.points[0]
-    agent_name = best.payload.get("agent_name") if best.payload else None
-    minimum = get_min_skill_score()
-
-    # The search returns its nearest hit however far away it is, so a request
-    # no agent covers would otherwise be handed to whichever one was closest.
-    # Both branches log the score: that is the data the threshold is tuned on.
-    if agent_name is None or best.score < minimum:
-        print(f'search_skill: {query_text!r} -> no match (nearest {agent_name} at {best.score:.3f}, minimum {minimum})')
-        return None
-
-    print(f'search_skill: {query_text!r} -> {agent_name} ({best.score:.3f})')
-
-    return agent_name
+    return None
 
 
 

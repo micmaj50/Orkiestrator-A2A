@@ -1,8 +1,8 @@
 """Tests for the floor under the agent lookup.
 
-The vector search always returns its nearest hit, however far away it is. That
-turned a request no agent covers into a confident answer from whichever agent
-happened to be closest, so there is a minimum score now.
+The vector search returns its nearest hit however far away it is. That turned a
+request no agent covers into a confident answer from whichever agent happened
+to be closest, so the search now carries a minimum score.
 """
 
 import numpy
@@ -24,18 +24,26 @@ class FakeResponse:
 
 
 class FakeQdrant:
-    """Replaces the client: these tests are about the threshold, not the search."""
+    """Replaces the client, dropping hits below the threshold the way Qdrant does."""
 
     def __init__(self, points):
-        self.response = FakeResponse(points)
+        self.points = points
+        self.received_threshold = None
 
-    def query_points(self, collection_name, query, limit):
-        return self.response
+    def query_points(self, collection_name, query, limit, score_threshold=None):
+        self.received_threshold = score_threshold
+
+        kept = [
+            point for point in self.points
+            if score_threshold is None or point.score >= score_threshold
+        ]
+
+        return FakeResponse(kept[:limit])
 
 
 @pytest.fixture(autouse=True)
 def no_embedding_model(monkeypatch):
-    """The real model is a download; the vector it returns is irrelevant here."""
+    """The real model is a download, and the vector it returns is irrelevant here."""
 
     class FakeModel:
         def encode(self, texts):
@@ -43,6 +51,20 @@ def no_embedding_model(monkeypatch):
             return {'dense_vecs': numpy.zeros((1, 1024))}
 
     monkeypatch.setattr(database, '_get_embedding_model', FakeModel)
+
+
+def test_the_threshold_reaches_the_search(monkeypatch):
+    """
+    Qdrant does the filtering, so dropping the argument would disable the floor
+    without any other test noticing.
+    """
+
+    monkeypatch.setenv('MIN_SKILL_SCORE', '0.42')
+    client = FakeQdrant([FakePoint(0.9)])
+
+    database.search_skill(client, 'find fuel')
+
+    assert client.received_threshold == 0.42
 
 
 def test_a_close_enough_skill_is_matched(monkeypatch):
@@ -87,7 +109,7 @@ def test_an_empty_index_is_no_match():
     assert database.search_skill(FakeQdrant([]), 'find fuel') is None
 
 
-def test_the_default_threshold_is_read_from_the_environment(monkeypatch):
+def test_the_threshold_is_read_from_the_environment(monkeypatch):
     monkeypatch.delenv('MIN_SKILL_SCORE', raising=False)
     assert config.get_min_skill_score() == 0.5
 

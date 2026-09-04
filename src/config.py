@@ -146,8 +146,9 @@ def get_graph_recursion_limit() -> int:
 #
 # The vector search always returns its closest hit, however far away it is, so
 # without a floor a request no agent covers is answered by whichever agent
-# happened to be nearest. Every lookup logs its score, so tune this from real
-# traffic rather than from this starting point.
+# happened to be nearest. The right value depends on the embeddings and on what
+# the agent cards say, so this is a starting point to calibrate, not a measured
+# one.
 DEFAULT_MIN_SKILL_SCORE = 0.5
 
 
