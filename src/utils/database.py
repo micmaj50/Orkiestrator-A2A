@@ -3,6 +3,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from FlagEmbedding import BGEM3FlagModel
 
+from config import get_min_skill_score
+
 
 COLLECTION_NAME = "agent_skills"
 
@@ -29,7 +31,8 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
     Returns
     -------
     str | None
-        The name of the best matching agent, or None if no matching point/payload is found.
+        The name of the best matching agent, or None when nothing is close
+        enough to count as a match.
     """
 
 
@@ -40,6 +43,10 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
         collection_name=COLLECTION_NAME,
         query=query_vector,
         limit=1,
+        # Without a floor the nearest skill comes back however far away it is,
+        # so a request no agent covers gets answered by whichever agent
+        # happened to be closest.
+        score_threshold=get_min_skill_score(),
     )
 
     if response.points and response.points[0].payload:

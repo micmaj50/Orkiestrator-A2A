@@ -55,10 +55,9 @@ class FakeLlm:
 class FakeSubAgents:
     """Replaces `call_sub_agent`: records the query and the target URL."""
 
-    def __init__(self, broken_url: str | None = None, result: tuple | None = None):
+    def __init__(self, broken_url: str | None = None):
         self.calls: list[tuple[str, str]] = []
         self.broken_url = broken_url
-        self.result = result
 
     async def __call__(self, user_request: str, agent_url: str) -> tuple:
         self.calls.append((user_request, agent_url))
@@ -66,7 +65,7 @@ class FakeSubAgents:
         if agent_url == self.broken_url:
             raise RuntimeError('sub-agent is down')
 
-        return self.result or (TaskState.TASK_STATE_COMPLETED, f'answer from {agent_url}')
+        return TaskState.TASK_STATE_COMPLETED, f'answer from {agent_url}'
 
 
 def task(agent: str, query: str | None = None, task_id=1) -> dict:
@@ -79,10 +78,9 @@ def task(agent: str, query: str | None = None, task_id=1) -> dict:
 def run_flow(monkeypatch):
     """Wire the fakes into the graph module and run the graph."""
 
-    def _run(user_request: str, tasks: list[dict], broken_url: str | None = None, thread_id: str | None = None,
-             sub_agent_result: tuple | None = None):
+    def _run(user_request: str, tasks: list[dict], broken_url: str | None = None, thread_id: str | None = None):
         llm = FakeLlm(tasks)
-        sub_agents = FakeSubAgents(broken_url, sub_agent_result)
+        sub_agents = FakeSubAgents(broken_url)
 
         # Build query→agent mapping so search_skill returns the delegator's
         # assignment without loading the real embedding model.
@@ -293,13 +291,19 @@ def test_route_from_orchestrator(tasks, expected):
     (TaskState.TASK_STATE_FAILED, WorkItemStatus.FAILED),
     (TaskState.TASK_STATE_REJECTED, WorkItemStatus.FAILED),
 ])
-def test_how_the_sub_agent_ended_becomes_the_work_item_status(run_flow, task_state, expected):
+def test_how_the_sub_agent_ended_becomes_the_work_item_status(monkeypatch, task_state, expected):
     """A sub-agent that answered is not a sub-agent that succeeded."""
 
-    result, _, _ = run_flow(
-        'find gas',
-        [task('gas_agent', 'find gas')],
-        sub_agent_result=(task_state, 'what the agent said'),
+    async def sub_agent(user_request, agent_url):
+        return task_state, 'what the agent said'
+
+    monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agent)
+
+    state = GraphState(
+        user_input=HumanMessage(content='find gas'),
+        tasks=[WorkItem(id=1, assigned_agent='gas_agent', query='find gas')],
     )
+
+    result = asyncio.run(graph_module.agent_node(state))
 
     assert result['tasks'][0].status == expected

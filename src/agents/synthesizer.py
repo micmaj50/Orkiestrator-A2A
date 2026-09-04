@@ -42,7 +42,7 @@ class Synthesizer:
             request = str(state.user_input.content)
 
         answers = "\n".join(
-            f"Result from {task.assigned_agent} [{task.status.value}]: {task.result}"
+            f"Result from {task.assigned_agent or 'no agent'} [{task.status.value}]: {task.result}"
             for task in state.tasks if task.result
         )
 

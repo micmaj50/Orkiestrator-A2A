@@ -149,6 +149,14 @@ class OrchestratorExecutor(AgentExecutor):
                 state=TaskState.TASK_STATE_FAILED,
                 message=new_text_message('The request could not be completed. Please try rephrasing it.'),
             )
+        except Exception as exc:
+            # Anything the graph raises - a bad model response, an unreachable
+            # Qdrant - has to end the task. Letting it escape leaves the task in
+            # WORKING and the client waiting for an answer that never comes.
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_FAILED,
+                message=new_text_message(f'The request could not be completed: {exc}'),
+            )
 
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

@@ -17,8 +17,9 @@ LIMIT_GETTERS = [
     ('LLM_MAX_OUTPUT_TOKENS', config.get_llm_max_output_tokens, 1000, '500', 500),
     ('EXTERNAL_API_TIMEOUT_SECONDS', config.get_external_api_timeout_seconds, 15.0, '8', 8.0),
     ('SUB_AGENT_TIMEOUT_SECONDS', config.get_sub_agent_timeout_seconds, 90.0, '15', 15.0),
-    ('REQUEST_TIMEOUT_SECONDS', config.get_request_timeout_seconds, 180.0, '20', 20.0),
+    ('REQUEST_TIMEOUT_SECONDS', config.get_request_timeout_seconds, 540.0, '20', 20.0),
     ('MAX_TASKS', config.get_max_tasks, 5, '2', 2),
+    ('MIN_SKILL_SCORE', config.get_min_skill_score, 0.5, '0.7', 0.7),
 ]
 
 
@@ -38,6 +39,20 @@ def test_limit_reads_the_environment(monkeypatch, env_var, getter, default, raw,
     monkeypatch.setenv(env_var, raw)
 
     assert getter() == expected
+
+
+def test_request_timeout_outlasts_every_sub_agent_call(monkeypatch):
+    """
+    The outer cap must not fire before the per-agent ones. If it does, one slow
+    sub-agent takes the whole run down and the answers that did arrive are lost.
+    """
+
+    monkeypatch.delenv('REQUEST_TIMEOUT_SECONDS', raising=False)
+    monkeypatch.setenv('MAX_TASKS', '5')
+    monkeypatch.setenv('SUB_AGENT_TIMEOUT_SECONDS', '90')
+
+    # Tasks run one after another, so their budgets add up.
+    assert config.get_request_timeout_seconds() > 5 * 90
 
 
 def test_recursion_limit_leaves_room_for_a_full_run(monkeypatch):
@@ -163,50 +178,36 @@ class FakeEventQueue(EventQueue):
         self.events.append(event)
 
 
-def test_orchestrator_executor_handles_timeout(monkeypatch):
-    """If the graph times out, the task must be marked as FAILED."""
-
-    executor = OrchestratorExecutor()
-    context = create_fake_context('find gas')
-    queue = FakeEventQueue()
+@pytest.mark.parametrize('error', [
+    TimeoutError(),
+    GraphRecursionError(),
+    # The one that used to escape, leaving the task in WORKING and the client waiting.
+    RuntimeError('qdrant is unreachable'),
+])
+def test_a_failing_graph_still_closes_the_task(monkeypatch, error):
+    """However the graph gives up, the A2A task has to reach a terminal state."""
 
     import agents.orchestrator.agent_executor
-    monkeypatch.setattr(agents.orchestrator.agent_executor, 'new_task_from_user_message', lambda msg: MagicMock(id='1', context_id='2'))
+
+    executor = OrchestratorExecutor()
+    queue = FakeEventQueue()
+
+    monkeypatch.setattr(
+        agents.orchestrator.agent_executor,
+        'new_task_from_user_message',
+        lambda msg: MagicMock(id='1', context_id='2'),
+    )
 
     async def fake_invoke(*args, **kwargs):
-        raise TimeoutError()
+        raise error
 
     monkeypatch.setattr(executor.agent, 'invoke', fake_invoke)
 
-    asyncio.run(executor.execute(context, queue))
+    asyncio.run(executor.execute(create_fake_context('find gas'), queue))
 
-    status_updates = [e for e in queue.events if hasattr(e, 'status')]
-    assert status_updates, "Expected status updates to be generated"
-    last_status = status_updates[-1].status.state
-    assert last_status == TaskState.TASK_STATE_FAILED
-
-
-def test_orchestrator_executor_handles_recursion_limit(monkeypatch):
-    """If the graph hits recursion limit, the task must be marked as FAILED."""
-
-    executor = OrchestratorExecutor()
-    context = create_fake_context('find gas')
-    queue = FakeEventQueue()
-
-    import agents.orchestrator.agent_executor
-    monkeypatch.setattr(agents.orchestrator.agent_executor, 'new_task_from_user_message', lambda msg: MagicMock(id='1', context_id='2'))
-
-    async def fake_invoke(*args, **kwargs):
-        raise GraphRecursionError()
-
-    monkeypatch.setattr(executor.agent, 'invoke', fake_invoke)
-
-    asyncio.run(executor.execute(context, queue))
-
-    status_updates = [e for e in queue.events if hasattr(e, 'status')]
-    assert status_updates, "Expected status updates to be generated"
-    last_status = status_updates[-1].status.state
-    assert last_status == TaskState.TASK_STATE_FAILED
+    statuses = [event for event in queue.events if hasattr(event, 'status')]
+    assert statuses, 'the task was left without a terminal state'
+    assert statuses[-1].status.state == TaskState.TASK_STATE_FAILED
 
 
 def test_orchestrator_node_drops_tasks_when_limit_exceeded(monkeypatch):

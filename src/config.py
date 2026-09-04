@@ -50,7 +50,6 @@ DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_MAX_RETRIES = 1
 DEFAULT_EXTERNAL_API_TIMEOUT_SECONDS = 15.0
 DEFAULT_SUB_AGENT_TIMEOUT_SECONDS = 90.0
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 180.0
 
 # How long we wait for one answer from the language model before giving up
 def get_llm_timeout_seconds() -> float:
@@ -81,10 +80,18 @@ def get_sub_agent_timeout_seconds() -> float:
     )
 
 
-# How long one whole user request may take, from the question to the final answer
+# How long one whole user request may take, from the question to the final answer.
+#
+# This is the outermost cap, so it has to leave room for every sub-agent to hit
+# its own timeout first. Firing before them kills the whole run and throws away
+# the answers that did come back, which is worse than letting one slow sub-agent
+# fail on its own. Tasks run one after another, so their budgets add up, and the
+# extra slot covers the planning and synthesis the orchestrator does around them.
 def get_request_timeout_seconds() -> float:
+    default = (get_max_tasks() + 1) * get_sub_agent_timeout_seconds()
+
     return float(
-            os.getenv("REQUEST_TIMEOUT_SECONDS", str(DEFAULT_REQUEST_TIMEOUT_SECONDS))
+            os.getenv("REQUEST_TIMEOUT_SECONDS", str(default))
     )
 
 
@@ -123,6 +130,25 @@ def get_graph_recursion_limit() -> int:
             GRAPH_STEPS_PER_TASK * get_max_tasks()
             + GRAPH_STEPS_OVERHEAD
             + GRAPH_STEPS_SLACK
+    )
+
+
+
+# Routing limits.
+
+# Cosine similarity below which the nearest skill is not a real match.
+#
+# The vector search always returns its closest hit, however far away it is, so
+# without a floor a request no agent covers is answered by whichever agent
+# happened to be nearest. The right value depends on the embeddings and on what
+# the agent cards say, so this is a starting point to calibrate, not a measured
+# one.
+DEFAULT_MIN_SKILL_SCORE = 0.2
+
+
+def get_min_skill_score() -> float:
+    return float(
+            os.getenv("MIN_SKILL_SCORE", str(DEFAULT_MIN_SKILL_SCORE))
     )
 
 
