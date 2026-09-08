@@ -1,55 +1,41 @@
-import json
-
+import multiprocess
 from a2a.types import AgentCard
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import PromptTemplate
+from langfuse import observe
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-import multiprocess
-from langgraph.checkpoint.memory import MemorySaver 
-from agents.food_agent.agent_card import agent_card as food_agent_card
-from agents.gas_agent.agent_card import agent_card as gas_agent_card
+from langgraph.types import interrupt
+from qdrant_client import QdrantClient
+
 from agents.orchestrator.delegator import Delegator
 from agents.orchestrator.llm import Llm
-from agents.parking_agent.agent_card import agent_card as parking_agent_card
-from agents.state import GraphState, Task, TaskStatus
+from agents.orchestrator.task_division_verifier import TaskDivisionVerifier
+from agents.registry import discover_agents
+from agents.state import GraphState, WorkItem, WorkItemStatus
 from agents.synthesizer import Synthesizer
-from agents.weather_agent.agent_card import agent_card as weather_agent_card
-from config import (
-    get_food_agent_url,
-    get_gas_agent_url,
-    get_parking_agent_url,
-    get_weather_agent_url,
-)
+from config import get_agent_url, get_max_tasks
+from context.car import create_mock_car
+from contracts.agent_request import AgentRequest
 from utils.a2a_client import call_sub_agent
-from qdrant_client import QdrantClient
-from utils.database import search_skill, upload_agents_from_file
-from langgraph.types import interrupt
-
-AGENT_NODE = 'agent_node'
-SYNTHESIZER_NODE = 'response_synthesizer'
-
-llm: Llm | None = None
-delegator: Delegator | None = None
-synthesizer = Synthesizer()
-qdrant_client: QdrantClient | None = None
-
-def get_qdrant_client(path: str) -> QdrantClient:
-    global qdrant_client
-    if qdrant_client is None:
-        qdrant_client = QdrantClient(":memory:")
-        upload_agents_from_file(qdrant_client, path)
-    return qdrant_client
+from utils.card_loader import load_agent_card
+from utils.database import search_skill, upload_agents_cards
 
 AGENT_NODE = 'agent_node'
 SYNTHESIZER_NODE = 'response_synthesizer'
 ASK_USER_NODE = 'ask_user_node'
 
+llm: Llm | None = None
+delegator: TaskDivisionVerifier | None = None
+synthesizer = Synthesizer()
+qdrant_client: QdrantClient | None = None
+car = create_mock_car()
+_sub_agent_cards: dict[str, AgentCard] | None = None
+
 def agent_url(card: AgentCard) -> str:
     """Where the agent listens."""
 
-    return card.supported_interfaces[0].url
-
-
+    return str(card.supported_interfaces[0].url)
 
 def _safe_del(self):
     try:
@@ -59,29 +45,53 @@ def _safe_del(self):
 
 multiprocess.resource_tracker.ResourceTracker.__del__ = _safe_del # type: ignore
 
-# The cards of the agents that are actually running, keyed by the agent key the
-# delegator routes on.
-SUB_AGENT_CARDS: dict[str, AgentCard] = {
-    'gas_agent': gas_agent_card,
-    'food_agent': food_agent_card,
-    'parking_agent': parking_agent_card,
-    'weather_agent': weather_agent_card,
-}
+
+def _load_sub_agent_cards() -> dict[str, AgentCard]:
+    cards = {}
+
+    for definiton in discover_agents():
+        if definiton.is_orchestrator:
+            continue
+
+        cards[definiton.key] = load_agent_card(definiton.card_path, agent_url=get_agent_url(definiton.key))
+
+    return cards
+
+
+def get_sub_agent_cards() -> dict[str, AgentCard]:
+    """Load discovered sub-agent cards on first use and cache the result."""
+    global _sub_agent_cards
+
+    if _sub_agent_cards is None:
+        _sub_agent_cards = _load_sub_agent_cards()
+
+    return _sub_agent_cards
+
+
+def get_qdrant_client() -> QdrantClient:
+    global qdrant_client
+
+    if qdrant_client is None:
+        qdrant_client = QdrantClient(":memory:")
+        upload_agents_cards(qdrant_client, get_sub_agent_cards())
+
+    return qdrant_client
 
 
 async def orchestrator_node(state: GraphState) -> dict:
     """Orchestrator node that asks the LLM (Delegator) which sub-agent(s) to call."""
 
     global llm, delegator
-    qdrant_client =  get_qdrant_client('database.json')
+    client =  get_qdrant_client()
     if state.tasks:
         return {}
 
     if delegator is None:
         if llm is None:
             llm = Llm()
-        delegator = Delegator(Llm=llm, AgentCard=SUB_AGENT_CARDS)
 
+        base_delegator = Delegator(Llm=llm)
+        delegator = TaskDivisionVerifier(delegator=base_delegator, llm=llm)
 
     raw = delegator.invoke(state, None)
     print(raw)
@@ -90,87 +100,114 @@ async def orchestrator_node(state: GraphState) -> dict:
     else:
         items = []
 
-    tasks: list[Task] = []
+    max_tasks = get_max_tasks()
+    dropped = False
+
+    tasks: list[WorkItem] = []
     for index, item in enumerate(items, start=1):
+        # The delegator can submit any number of tasks, so the fan-out is limited.
+        if len(tasks) >= max_tasks:
+            dropped = True
+            break
+
         if not isinstance(item, dict):
             continue
-        agent = item.get('assigned_agent')
 
         try:
             task_id = int(item.get('id'))
         except (TypeError, ValueError):
             task_id = index
 
-
         query = item.get('query', '')
+        request = AgentRequest(user_input= str(state.user_input.content), task= query)
+        context = request.select_context(car_context=car, llm=llm)
+
         matched_agents = search_skill(qdrant_client, query_text=str(query))
         agent = matched_agents
+        agent = search_skill(client, query_text=str(query))
+
+        if agent not in get_sub_agent_cards():
+            tasks.append(
+                WorkItem(
+                    id=task_id,
+                    assigned_agent=agent,
+                    status=WorkItemStatus.FAILED,
+                    result="No agent matched this part of the request."
+                )
+            )
+            continue
         raw_status = str(item.get('status', 'in_progress')).lower().strip()
 
         #getting status from LLM
         if 'context' in raw_status:
-            task_status = TaskStatus.CONTEXT
+            task_status = WorkItemStatus.CONTEXT
         else:
-            task_status = TaskStatus.IN_PROGRESS
+            task_status = WorkItemStatus.IN_PROGRESS
 
-        new_task = Task(
+        new_task = WorkItem(
                 id=task_id,
                 assigned_agent=agent,
                 query=item.get('query'),
+                context=context,
                 status=task_status
+
             )
 
         tasks.append(new_task)
-
-
-
-    return {'tasks': tasks}
-
-
+    return {'tasks': tasks, 'tasks_dropped': dropped}
 
 
 def route_from_orchestrator(state: GraphState) -> str:
     """Keep visiting the shared agent node while any task is still pending."""
 
-    
+
     for task in state.tasks:
         print(task)
-        if task.status == TaskStatus.CONTEXT:
+        if task.status == WorkItemStatus.CONTEXT:
             return ASK_USER_NODE
-        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent in SUB_AGENT_CARDS:
+        if task.status == WorkItemStatus.IN_PROGRESS and task.assigned_agent in get_sub_agent_cards():
             return AGENT_NODE
-    
-        
+
     return SYNTHESIZER_NODE
 
-
+@observe(
+        name="delegate_to_sub_agent",
+        capture_input=False,
+        capture_output=False
+)
 async def agent_node(state: GraphState) -> dict:
     """
     The one node that serves every sub-agent: it takes the next pending task,
     looks its agent up in the registry, calls it over A2A and records the result.
     """
 
+    cards = get_sub_agent_cards()
+
     for task in state.tasks:
-        if task.status == TaskStatus.IN_PROGRESS and task.assigned_agent in SUB_AGENT_CARDS:
-            card = SUB_AGENT_CARDS[task.assigned_agent]
+        if task.status == WorkItemStatus.IN_PROGRESS and task.assigned_agent in cards:
+            card = cards[task.assigned_agent]
 
             try:
                 query = task.query or str(state.user_input.content)
+                if task.context is not None:
+                    query += task.context.get_context_for_query()
                 result = await call_sub_agent(query, agent_url(card))
 
-                task.status = TaskStatus.COMPLETED
+                task.status = WorkItemStatus.COMPLETED
                 task.result = result
 
             except Exception as exc:
-                task.status = TaskStatus.FAILED
+                task.status = WorkItemStatus.FAILED
                 task.result = f'{card.name} call failed: {exc}'
 
             output: dict = {'tasks': state.tasks}
+
             if task.result:
                 # Publish the result on messages so the synthesizer can read it.
                 output['messages'] = [AIMessage(content=task.result)]
+
             return output
-        
+
     return {}
 
 
@@ -179,7 +216,7 @@ async def ask_user_node(state: GraphState) -> dict:
     if llm is None:
         llm = Llm()
 
-    context_tasks = [t for t in state.tasks if t.status == TaskStatus.CONTEXT]
+    context_tasks = [t for t in state.tasks if t.status == WorkItemStatus.CONTEXT]
     if not context_tasks:
         return {}
 
@@ -188,42 +225,44 @@ async def ask_user_node(state: GraphState) -> dict:
     "Prepare request asking the user to provide the missing details."
     )
     tasks_summary = "\n".join([f"({t.query})" for t in context_tasks])
-    
+
     question_to_user = llm(
         prompt=ask_prompt,
         inputs={"tasks_info": tasks_summary},
-        asJSON=False
+        asJSON=False,
+        observation_name="ask_user_question"
     )
 
-  
+
     user_response = interrupt(str(question_to_user))
 
 
-    
+
     update_prompt = PromptTemplate.from_template(
         "The user provided additional information: '{user_response}'.\n"
         "Here are the tasks that require query refinement:\n{tasks_info}\n\n"
         "Update the query for these tasks so that they include the provided context.\n"
         "Return the result strictly as a JSON matching this format: {{\"updates\": [{{\"id\": 1, \"updated_query\": \"...\"}}]}}"
     )
-    
+
     result_dict = llm(
         prompt=update_prompt,
         inputs={
             "user_response": str(user_response),
             "tasks_info": tasks_summary
         },
-        asJSON=True
+        asJSON=True,
+        observation_name="ask_user_query_update"
     )
 
 
     if isinstance(result_dict, dict) and "updates" in result_dict:
         updates_map = {item["id"]: item["updated_query"] for item in result_dict["updates"] if "id" in item}
-        
+
         for task in state.tasks:
             if task.id in updates_map:
                 task.query = updates_map[task.id]
-                task.status = TaskStatus.IN_PROGRESS 
+                task.status = WorkItemStatus.IN_PROGRESS
                 task.result = None
 
 
@@ -233,32 +272,27 @@ async def ask_user_node(state: GraphState) -> dict:
 async def response_synthesizer_node(state: GraphState) -> dict:
     """
     Response synthesizer node that asks the LLM (Synthesizer) to combine the
-    sub-agent results into a final message.
+    sub-agent only COMPLETED and FAILED task results into a final message.
     """
 
     global llm
 
-    has_results = False
-    for task in state.tasks:
-        if task.result:
-            has_results = True
-            break
+    valid_tasks = [t for t in state.tasks if t.status in (WorkItemStatus.COMPLETED, WorkItemStatus.FAILED)]
 
-    if not has_results:
+    if not valid_tasks:
         message = "I couldn't handle that request. Please try again or ask for something else."
         return {'messages': [AIMessage(content=message)]}
-    
+
     if llm is None:
         llm = Llm()
-    
+
     final_text = synthesizer(state, llm, False)
-    
+
     if not isinstance(final_text, str):
         final_text = str(final_text)
-    
+
     return {'messages': [AIMessage(content=final_text)]}
 
-checkpointer = MemorySaver()
 
 graph_builder = StateGraph(GraphState)
 
@@ -273,10 +307,9 @@ graph_builder.add_conditional_edges('orchestrator', route_from_orchestrator, {
     SYNTHESIZER_NODE: SYNTHESIZER_NODE,
     ASK_USER_NODE: ASK_USER_NODE,
 })
+
 graph_builder.add_edge(AGENT_NODE, 'orchestrator')
 graph_builder.add_edge(SYNTHESIZER_NODE, END)
 graph_builder.add_edge(ASK_USER_NODE, AGENT_NODE)
 
-
-
-graph = graph_builder.compile(checkpointer=checkpointer)
+graph = graph_builder.compile(checkpointer=InMemorySaver())
