@@ -4,6 +4,7 @@
 import asyncio
 import uuid
 
+from a2a.types import AgentCard
 import pytest
 from langchain_core.messages import HumanMessage
 
@@ -52,13 +53,14 @@ class FakeLlm:
 
 
 class FakeSubAgents:
-    """Replaces `call_sub_agent`: records the query and the target URL."""
+    """Replaces `call_sub_agent`: records the query and the card's URL."""
 
     def __init__(self, broken_url: str | None = None):
         self.calls: list[tuple[str, str]] = []
         self.broken_url = broken_url
 
-    async def __call__(self, user_request: str, agent_url: str) -> str:
+    async def __call__(self, user_request: str, agent_card: AgentCard) -> str:
+        agent_url = str(agent_card.supported_interfaces[0].url)
         self.calls.append((user_request, agent_url))
 
         if agent_url == self.broken_url:
@@ -282,3 +284,76 @@ def test_route_from_orchestrator(tasks, expected):
     )
 
     assert route_from_orchestrator(state) == expected
+
+
+def test_register_remote_agents_merges_cards_and_reports_errors(monkeypatch, capsys):
+    local_card = object()
+    remote_card = object()
+    conflicting_card = object()
+    cards = {"local_agent": local_card}
+    configs = [object()]
+
+    monkeypatch.setattr(graph_module, "_remote_agents_loaded", False)
+    monkeypatch.setattr(
+        graph_module,
+        "load_remote_agent_configs",
+        lambda: (configs, ["invalid configuration"])
+    )
+    monkeypatch.setattr(graph_module, "get_sub_agent_cards", lambda: cards)
+
+    async def fake_fetch_remote_agent_cards(received_configs):
+        assert received_configs == configs
+        return (
+            {
+                "remote_agent": remote_card,
+                "local_agent": conflicting_card
+            },
+            ["unavailable endpoint"]
+        )
+
+    monkeypatch.setattr(
+        graph_module,
+        "fetch_remote_agent_cards",
+        fake_fetch_remote_agent_cards
+    )
+
+    asyncio.run(graph_module.register_remote_agents())
+    output = capsys.readouterr().out
+
+    assert cards == {
+        "local_agent": local_card,
+        "remote_agent": remote_card
+    }
+    assert "invalid configuration" in output
+    assert "unavailable endpoint" in output
+    assert "conflicts with a local agent" in output
+
+
+def test_register_remote_agents_runs_only_once(monkeypatch):
+    load_calls = 0
+
+    def fake_load_remote_agent_configs():
+        nonlocal load_calls
+        load_calls += 1
+        return [], []
+
+    async def fake_fetch_remote_agent_cards(_configs):
+        return {}, []
+
+    monkeypatch.setattr(graph_module, "_remote_agents_loaded", False)
+    monkeypatch.setattr(
+        graph_module,
+        "load_remote_agent_configs",
+        fake_load_remote_agent_configs
+    )
+    monkeypatch.setattr(
+        graph_module,
+        "fetch_remote_agent_cards",
+        fake_fetch_remote_agent_cards
+    )
+    monkeypatch.setattr(graph_module, "get_sub_agent_cards", lambda: {})
+
+    asyncio.run(graph_module.register_remote_agents())
+    asyncio.run(graph_module.register_remote_agents())
+
+    assert load_calls == 1
