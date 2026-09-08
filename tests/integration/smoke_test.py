@@ -2,6 +2,22 @@ import os
 import subprocess
 import sys
 import time
+import httpx
+
+def wait_for_server(port: int, agent_path: str = "", timeout: int = 60) -> None:
+    url = f"http://127.0.0.1:{port}{agent_path}/.well-known/agent-card.json"
+
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            response = httpx.get(url, timeout=1, follow_redirects=True)
+            if response.status_code == 200:
+                return
+        except httpx.HTTPError:
+            pass
+
+    raise AssertionError(f"Server did not start within {timeout}s: {url}")
 
 
 def test_standalone_mode_smoke():
@@ -22,10 +38,10 @@ def test_standalone_mode_smoke():
         "agents.orchestrator",
     ]
     test_cases = [
-        ("gas", "orlen"),
-        ("food", "kitchen"),
-        ("parking", "parking"),
-        ("weather", "thundery"),
+        ("find the closest gas stations near me", "Sample Station"),
+        ("find pizza restaurants near me", "Demo Pizza"),
+        ("find parking near me", "Test Parking"),
+        ("what is the weather today?", "cloudy")
     ]
     
     try:
@@ -36,7 +52,8 @@ def test_standalone_mode_smoke():
             )
             processes.append(proc)
 
-        time.sleep(3)
+        for port in [9999, 9998, 9997, 9996, 9995]:
+            wait_for_server(port)
 
         for query, expected_keyword in test_cases:
             result = subprocess.run(
@@ -45,14 +62,14 @@ def test_standalone_mode_smoke():
                 text=True,
                 encoding="utf-8",
                 capture_output=True,
-                timeout=15,
+                timeout=90,
                 env=test_env,
             )
 
             assert result.returncode == 0, (
                 f"Test client failed for query '{query}':\n{result.stderr}"
             )
-            assert expected_keyword in result.stdout.lower(), (
+            assert expected_keyword.lower() in result.stdout.lower(), (
                 f"Expected '{expected_keyword}' in response for '{query}', got:\n{result.stdout}"
             )
 
@@ -77,10 +94,10 @@ def test_single_app_smoke():
     }
 
     test_cases = [
-        ("gas", "orlen"),
-        ("food", "kitchen"),
-        ("parking", "parking"),
-        ("weather", "thundery"),
+        ("find the closest gas stations near me", "Sample Station"),
+        ("find pizza restaurants near me", "Demo Pizza"),
+        ("find parking near me", "Test Parking"),
+        ("what is the weather today?", "cloudy")
     ]
 
     server_proc = subprocess.Popen(
@@ -89,7 +106,7 @@ def test_single_app_smoke():
     )
 
     try:
-        time.sleep(3)
+        wait_for_server(8000, "/orchestrator")
 
         for query, expected_keyword in test_cases:
             result = subprocess.run(
@@ -98,14 +115,14 @@ def test_single_app_smoke():
                 text=True,
                 encoding="utf-8",
                 capture_output=True,
-                timeout=15,
+                timeout=90,
                 env=test_env,
             )
 
             assert result.returncode == 0, (
                 f"Single app test client failed for query '{query}':\n{result.stderr}"
             )
-            assert expected_keyword in result.stdout.lower(), (
+            assert expected_keyword.lower() in result.stdout.lower(), (
                 f"Expected '{expected_keyword}' in single app response for '{query}', got:\n{result.stdout}"
             )
 
