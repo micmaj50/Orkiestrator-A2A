@@ -245,11 +245,15 @@ async def ask_user_node(state: GraphState) -> dict:
         "Return the result strictly as a JSON matching this format: {{\"updates\": [{{\"id\": 1, \"updated_query\": \"...\"}}]}}"
     )
 
+    # The delegator's ids are not necessarily 1..n, so they are spelled out here:
+    # without them the model has to guess, and a guessed id updates nothing.
+    tasks_for_update = "\n".join(f"id={t.id}: {t.query}" for t in context_tasks)
+
     result_dict = llm(
         prompt=update_prompt,
         inputs={
             "user_response": str(user_response),
-            "tasks_info": tasks_summary
+            "tasks_info": tasks_for_update
         },
         asJSON=True,
         observation_name="ask_user_query_update"
@@ -265,6 +269,15 @@ async def ask_user_node(state: GraphState) -> dict:
                 task.status = WorkItemStatus.IN_PROGRESS
                 task.result = None
 
+    # No task may leave this node still CONTEXT: the router would send it straight
+    # back here and the user would be asked the same question again. Nothing stops
+    # that loop, because every interrupt ends the invocation and the recursion
+    # limit starts over on the next one.
+    for task in context_tasks:
+        if task.status == WorkItemStatus.CONTEXT:
+            task.query = f"{task.query}. Additional context from the user: {user_response}"
+            task.status = WorkItemStatus.IN_PROGRESS
+            task.result = None
 
     return {"tasks": state.tasks}
 
