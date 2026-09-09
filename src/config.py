@@ -131,7 +131,7 @@ def get_graph_recursion_limit() -> int:
 
 # Routing limits.
 # Similarity below which the nearest skill is not a real match.
-DEFAULT_MIN_SKILL_SCORE = 0.2
+DEFAULT_MIN_SKILL_SCORE = 0.5
 
 
 def get_min_skill_score() -> float:

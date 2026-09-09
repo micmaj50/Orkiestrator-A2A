@@ -14,7 +14,7 @@ class Synthesizer:
         Use the conversation history to understand context (e.g., what "there" or "that place" refers to).
 
         Each output is tagged with what it is worth: [completed] is an answer,
-        [need_context] means the agent needs something from the user,
+        [context] means the agent needs something from the user,
         and [failed] means that part could not be handled - say so plainly, and
         never present it as an answer.
 

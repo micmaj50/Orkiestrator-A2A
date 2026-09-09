@@ -11,7 +11,6 @@ from contracts.agent_request import AgentContext
 
 class WorkItemStatus(str, Enum):
     IN_PROGRESS = "in_progress"
-    NEED_CONTEXT = "need_context"
     COMPLETED = "completed"
     FAILED = "failed"
     CONTEXT = "context"
@@ -30,4 +29,3 @@ class GraphState(BaseModel):
 
     tasks: list[WorkItem] = Field(default_factory=list)
     tasks_dropped: bool = False
-

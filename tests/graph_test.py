@@ -287,7 +287,7 @@ def test_route_from_orchestrator(tasks, expected):
 
 @pytest.mark.parametrize(('task_state', 'expected'), [
     (TaskState.TASK_STATE_COMPLETED, WorkItemStatus.COMPLETED),
-    (TaskState.TASK_STATE_INPUT_REQUIRED, WorkItemStatus.NEED_CONTEXT),
+    (TaskState.TASK_STATE_INPUT_REQUIRED, WorkItemStatus.CONTEXT),
     (TaskState.TASK_STATE_FAILED, WorkItemStatus.FAILED),
     (TaskState.TASK_STATE_REJECTED, WorkItemStatus.FAILED),
 ])

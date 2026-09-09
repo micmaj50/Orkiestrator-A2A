@@ -194,7 +194,7 @@ async def agent_node(state: GraphState) -> dict:
                 if task_state == TaskState.TASK_STATE_COMPLETED:
                     task.status = WorkItemStatus.COMPLETED
                 elif task_state == TaskState.TASK_STATE_INPUT_REQUIRED:
-                    task.status = WorkItemStatus.NEED_CONTEXT
+                    task.status = WorkItemStatus.CONTEXT
                 else:
                     task.status = WorkItemStatus.FAILED
 
