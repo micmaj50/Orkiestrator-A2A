@@ -1,5 +1,5 @@
 import os
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -29,11 +29,35 @@ load_dotenv()
 langfuse = get_client()
 
 
+class CurrentLocation(BaseModel):
+    latitude: float = Field(
+            description=(
+                "Latitude of the vehicle's current location extracted "
+                "from the vehicle context included in the request"
+                )
+            )
+
+    longitude: float = Field(
+            description=(
+                "Longitude of the vehicle's current location extracted "
+                "from the vehicle context included in the request"
+                )
+            )
+
+
 class WeatherSearchParams(BaseModel):
     use_current_location: bool = Field(
         description=(
             "True if searching for weather conditions around the vehicle's current position. "
             "False if a specific target location (city, street, address, or landmark) was provided."
+        )
+    )
+    current_location: Optional[CurrentLocation] = Field(
+        default=None,
+        description=(
+            "The vehicle's current coordinates extracted from the context "
+            "included in the request. "
+            "Provide this only when use_current_location is True and coordinates are available."
         )
     )
     target_location: Optional[str] = Field(
@@ -69,8 +93,10 @@ async def extract_weather_search_params(driver_command: str) -> WeatherSearchPar
             "role": "system",
             "content": (
                 "You are an NLP analysis module inside an in-car voice assistant system. "
-                "Your sole task is to extract weather search parameters from the driver's spoken command "
-                "and map them into the requested JSON schema."
+                "Your sole task is to extract weather search parameters "
+                "from the complete request. "
+                "The request may contain additional vehicle context in JSON format. "
+                "Use this information when it helps determine search parameters."
             )
         },
         {
@@ -107,7 +133,7 @@ async def extract_weather_search_params(driver_command: str) -> WeatherSearchPar
         capture_input=False,
         capture_output=False
 )
-async def fetch_weather_data(query: str, days: int, api_key: str) -> dict[str, Any]:
+async def fetch_weather_data(query: str, days: int, api_key: str) -> Dict[str, Any]:
     """Fetches weather data from WeatherAPI.com forecast endpoint."""
     url = "https://api.weatherapi.com/v1/forecast.json"
     request_params = {
@@ -144,10 +170,8 @@ class MockWeatherAgent:
     async def invoke(
         self,
         user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
-    ) -> tuple[TaskState, str]:
-        return TaskState.TASK_STATE_COMPLETED, (
+    ) -> str:
+        return (
             "[MOCK] Weather in Test City: 23.3°C (feels like 22.7°C), partly cloudy. "
             "Wind: 14.8 km/h, visibility: 9.0 km."
         )
@@ -164,34 +188,31 @@ class WeatherAgent:
     async def invoke(
         self,
         user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
-    ) -> tuple[TaskState, str]:
+    ) -> str:
         try:
             search_params = await extract_weather_search_params(user_request)
 
             weather_api_key = os.environ.get("WEATHER_API_KEY")
             if not weather_api_key:
-                return TaskState.TASK_STATE_FAILED, "Error: WEATHER_API_KEY environment variable is missing on the server."
+                return "Error: WEATHER_API_KEY environment variable is missing on the server."
 
             if search_params.use_current_location:
-                if car_lat is None or car_lng is None:
-                    return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot fetch local weather because the vehicle's GPS data is unavailable."
-                query = f"{car_lat},{car_lng}"
+                if not search_params.current_location:
+                    return "I cannot fetch local weather because the vehicle's GPS data is unavailable."
+                query = f"{search_params.current_location.latitude},{search_params.current_location.longitude}"
             else:
                 if not search_params.target_location:
-                    return TaskState.TASK_STATE_INPUT_REQUIRED, "Sorry, I couldn't understand the target location for the weather query."
+                    return "Sorry, I couldn't understand the target location for the weather query."
                 query = search_params.target_location
 
             raw_data = await fetch_weather_data(query=query, days=search_params.days, api_key=weather_api_key)
-            return TaskState.TASK_STATE_COMPLETED, self._format_weather_response(raw_data, requested_days=search_params.days)
+            return self._format_weather_response(raw_data, requested_days=search_params.days)
 
         except Exception as e:
-            return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the weather request: {str(e)}"
+            return f"An error occurred while processing the weather request: {str(e)}"
 
 
-
-    def _format_weather_response(self, data: dict[str, Any], requested_days: int = 1) -> str:
+    def _format_weather_response(self, data: Dict[str, Any], requested_days: int = 1) -> str:
         """Formats weather JSON data into a concise text response tailored for drivers."""
         location = data.get("location", {})
         city_name = location.get("name", "your area")
@@ -279,38 +300,31 @@ class WeatherAgentExecutor(AgentExecutor):
 
         query = get_message_text(context.message)
 
-        # Change this if the Orchestrator sends car GPS in a different field.
-        # Currently defaults to Warsaw Center coordinates as a fallback mock.
-        car_lat = getattr(context, 'car_lat', 52.2297)
-        car_lng = getattr(context, 'car_lng', 21.0122)
-
         if query:
             with langfuse.start_as_current_observation(
                 name="weather_agent_execute",
                 as_type="span",
                 trace_context=trace_context
             ):
-                state, text = await self.agent.invoke(
+                result = await self.agent.invoke(
                     user_request=query,
-                    car_lat=car_lat,
-                    car_lng=car_lng
                 )
         else:
-            state, text = TaskState.TASK_STATE_FAILED, 'No text input is provided!'
+            result = 'No text input is provided!'
 
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=text,
+                    text=result,
                     media_type='text/plain'
                 )
             ]
         )
-        print('WeatherAgent result: ', TaskState.Name(state), text)
+        print('WeatherAgent result: ', result)
 
         await task_updater.update_status(
-            state=state,
-            message=new_text_message(text),
+            state=TaskState.TASK_STATE_COMPLETED,
+            message=new_text_message('Weather request is completed!'),
         )
 
 

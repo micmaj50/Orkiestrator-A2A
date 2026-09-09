@@ -3,17 +3,18 @@
 import httpx
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, create_client
 from a2a.helpers import new_text_message
-from a2a.types import Role, SendMessageRequest, TaskState
+from a2a.types import Role, SendMessageRequest
 from langfuse import get_client
 
 from config import get_sub_agent_timeout_seconds
-from utils.a2a_response import extract_agent_result
+from utils.a2a_response import extract_artifact_text
+
 
 langfuse = get_client()
 
 
-async def call_sub_agent(user_request: str, agent_url: str) -> tuple[TaskState, str]:
-    """Send a text request to an A2A sub-agent and return how it ended and what it said."""
+async def call_sub_agent(user_request: str, agent_url: str) -> str:
+    """Send a text request to an A2A sub-agent and return its text response."""
 
     trace_id = langfuse.get_current_trace_id()
     parent_observation_id = langfuse.get_current_observation_id()
@@ -47,24 +48,20 @@ async def call_sub_agent(user_request: str, agent_url: str) -> tuple[TaskState, 
         # Build and send the request as an A2A user message
         request = SendMessageRequest(message=message)
 
+        extracted_texts: list[str] = []
+
         call_context = ClientCallContext(timeout=get_sub_agent_timeout_seconds())
 
-        result: tuple[TaskState, str] | None = None
-
-        # Iterate over the response chunks and extract the final state and text.
+        # Iterate over the response chunks and extract text from each
         async for chunk in client.send_message(request, context=call_context):
-            result = extract_agent_result(chunk) or result
+            text = extract_artifact_text(chunk)
+            if text:
+                extracted_texts.append(text)
 
-        if result is None:
-            return TaskState.TASK_STATE_FAILED, 'The sub-agent never reported a final state.'
+        if not extracted_texts:
+            return ''
 
-        state, text = result
-
-        # A success with nothing in it is a failure.
-        if state == TaskState.TASK_STATE_COMPLETED and not text.strip():
-            return TaskState.TASK_STATE_FAILED, 'The sub-agent reported success but returned no answer.'
-
-        return state, text
+        return extracted_texts[-1]
 
     finally:
         await client.close()

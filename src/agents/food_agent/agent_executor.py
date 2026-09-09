@@ -1,5 +1,5 @@
 import os
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -28,6 +28,21 @@ load_dotenv()
 
 langfuse = get_client()
 
+class CurrentLocation(BaseModel):
+    latitude: float = Field(
+            description=(
+                "Latitude of the vehicle's current location extracted "
+                "from the vehicle context included in the request"
+                )
+            )
+
+    longitude: float = Field(
+            description=(
+                "Longitude of the vehicle's current location extracted "
+                "from the vehicle context included in the request"
+                )
+            )
+
 
 class FoodSearchParams(BaseModel):
     use_current_location: bool = Field(
@@ -36,13 +51,23 @@ class FoodSearchParams(BaseModel):
             "False if a specific target location (city, street, address, or landmark) was provided."
         )
     )
+
+    current_location: Optional[CurrentLocation] = Field(
+            default=None,
+            description=(
+                "The vehicle's current coordinates extracted from the context "
+                "included in the request. "
+                "Provide this only when use_current_location is True and coordinates are available."
+            )
+        )
+
     target_location: Optional[str] = Field(
         default=None,
         description=(
             "A specific location provided by the driver to search around. "
-            "Can be a city (e.g., 'London', 'Warszawa'), a street (e.g., 'Krakowskie Przedmieście'), "
-            "or a point of interest/landmark (e.g., 'Neptun Monument', 'Pałac Kultury'). "
-            "Extract ONLY the location name itself. Do NOT include words like 'restaurant', 'food', 'dinner', "
+            "Can be a city, a street, or a point of interest/landmark. "
+            "Extract ONLY the location name itself. " 
+            "Do NOT include words like 'restaurant', 'food', 'dinner', "
             "or specific food types like 'sushi' or 'pizza'. "
             "Leave as None if use_current_location is True."
         )
@@ -60,7 +85,7 @@ class FoodSearchParams(BaseModel):
             "The specific type of food, cuisine, or restaurant style requested by the driver "
             "(e.g., 'sushi', 'italian', 'pizza', 'burgers', 'vegan', 'chinese', 'kebab', 'fast food'). "
             "Extract only the raw category name. "
-            "Leave as None if the user is asking for general food/restaurants without a specific preference."
+            "Leave as None if the user is asking for general food or restaurants" 
         )
     )
     provider: Literal["google", "here"] = Field(
@@ -90,7 +115,9 @@ async def extract_food_search_params(driver_command: str) -> FoodSearchParams:
             "content": (
                 "You are an NLP analysis module inside an in-car voice assistant system. "
                 "Your sole task is to extract food and restaurant search parameters "
-                "from the driver's spoken command and map them into the requested JSON schema."
+                "from the complete request. "
+                "The request may contain additional vehicle context in JSON format. "
+                "Use this information when it helps determine search parameters"
             )
         },
         {
@@ -142,32 +169,32 @@ async def geocode_location_here(location: str, api_key: str) -> tuple[float, flo
         return position["lat"], position["lng"]
 
 
-async def search_food_here(lat: float, lng: float, query_text: Optional[str], api_key: str) -> dict[str, Any]:
-    """
-    Searches for restaurants around coordinates using HERE Discover API.
-    """
+async def search_food_here(
+    api_key: str,
+    lat: float,
+    lng: float,
+    cuisine_or_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Searches for restaurants around coordinates using HERE Discover API."""
     url = "https://discover.search.hereapi.com/v1/discover"
     params = {
         "at": f"{lat},{lng}",
-        #"categories": "100",  # HERE Eat & Drink category
         "limit": 5,
-        "apiKey": api_key
+        "apiKey": api_key,
+        "q": cuisine_or_type if cuisine_or_type else "restaurant",
     }
-
-    # If the driver specified a food type (e.g., sushi), pass it to HERE
-    # Otherwise, default to searching for "restaurant"
-    params["q"] = query_text if query_text else "restaurant"
 
     async with httpx.AsyncClient(timeout=get_external_api_timeout_seconds()) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
+
 @observe(
-        name="google_places_food_search",
-        as_type="tool",
-        capture_input=False,
-        capture_output=False
+    name="google_places_food_search",
+    as_type="tool",
+    capture_input=False,
+    capture_output=False,
 )
 async def search_food_google(
     api_key: str,
@@ -176,7 +203,7 @@ async def search_food_google(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: Optional[int] = None,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Searches for restaurants using Google Places API (New) searchText endpoint."""
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
@@ -186,11 +213,10 @@ async def search_food_google(
     }
 
     food_query = cuisine_or_type if cuisine_or_type else "restaurant"
-    payload: dict[str, Any] = {"maxResultCount": 5}
+    payload: Dict[str, Any] = {"maxResultCount": 5}
 
     if target_location:
         payload["textQuery"] = f"{food_query} near {target_location}"
-
     elif lat is not None and lng is not None and radius is not None:
         payload["textQuery"] = food_query
         payload["locationBias"] = {
@@ -206,7 +232,7 @@ async def search_food_google(
     span_metadata = {
         "provider": "google_places_api",
         "endpoint": endpoint,
-        "http_method": "POST"
+        "http_method": "POST",
     }
     langfuse.update_current_span(input=payload, metadata=span_metadata)
 
@@ -218,7 +244,6 @@ async def search_food_google(
         langfuse.update_current_span(output=raw_response)
         return raw_response
 
-
 class MockFoodAgent:
     """Mock version of FoodAgent for offline testing."""
 
@@ -229,11 +254,9 @@ class MockFoodAgent:
     )
     async def invoke(
         self,
-        user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None,
-    ) -> tuple[TaskState, str]:
-        return TaskState.TASK_STATE_COMPLETED, (
+        user_request: str
+    ) -> str:
+        return (
             "[MOCK] I found the following dining options near your location:\n"
             "1. Example Bistro - Testowa 12, Test City, Poland\n"
             "2. Mock Sushi House - Przykładowa 17, Test City, Poland\n"
@@ -253,10 +276,8 @@ class FoodAgent:
     )
     async def invoke(
         self,
-        user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
-    ) -> tuple[TaskState, str]:
+        user_request: str
+    ) -> str:
         try:
             # Extract parameters using LLM
             search_params = await extract_food_search_params(user_request)
@@ -265,42 +286,38 @@ class FoodAgent:
             if search_params.provider == "google":
                 google_api_key = os.environ.get("GOOGLE_API_KEY")
                 if not google_api_key:
-                    return TaskState.TASK_STATE_FAILED, "Error: GOOGLE_API_KEY environment variable is missing on the server."
-                return await self._search_via_google(search_params, car_lat, car_lng, google_api_key)
+                    return "Error: GOOGLE_API_KEY environment variable is missing on the server."
+                return await self._search_via_google(search_params, google_api_key)
             else:
                 here_api_key = os.environ.get("HERE_API_KEY")
                 if not here_api_key:
-                    return TaskState.TASK_STATE_FAILED, "Error: HERE_API_KEY environment variable is missing on the server."
-                return await self._search_via_here(search_params, car_lat, car_lng, here_api_key)
+                    return "Error: HERE_API_KEY environment variable is missing on the server."
+                return await self._search_via_here(search_params, here_api_key)
 
         except Exception as e:
-            return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the request: {str(e)}"
+            return f"An error occurred while processing the request: {str(e)}"
 
 
     async def _search_via_google(
         self,
         search_params: FoodSearchParams,
-        car_lat: Optional[float],
-        car_lng: Optional[float],
-        api_key: str,
-    ) -> tuple[TaskState, str]:
+        api_key: str
+    ) -> str:
         """Executes food search using Google Places API."""
         if search_params.use_current_location:
-            if car_lat is None or car_lng is None:
-                return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot perform a local search because the vehicle's current GPS data is unavailable."
-
+            if not search_params.current_location:
+                return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
             raw_results = await search_food_google(
                 api_key=api_key,
                 cuisine_or_type=search_params.cuisine_or_type,
-                lat=car_lat,
-                lng=car_lng,
+                lat=search_params.current_location.latitude,
+                lng=search_params.current_location.longitude,
                 radius=search_params.search_radius_meters,
             )
             location_name = "your current location"
         else:
             if not search_params.target_location:
-                return TaskState.TASK_STATE_INPUT_REQUIRED, "Sorry, I couldn't understand the target location for the food search."
-
+                return "Sorry, I couldn't understand the target location for the food search."
             raw_results = await search_food_google(
                 api_key=api_key,
                 cuisine_or_type=search_params.cuisine_or_type,
@@ -309,10 +326,9 @@ class FoodAgent:
             location_name = f"'{search_params.target_location}'"
 
         places = raw_results.get("places", [])
-
         if not places:
             search_term = search_params.cuisine_or_type if search_params.cuisine_or_type else "dining options"
-            return TaskState.TASK_STATE_COMPLETED, f"I couldn't find any {search_term} within {search_params.search_radius_meters} meters around {location_name}."
+            return f"I couldn't find any {search_term} within {search_params.search_radius_meters} meters around {location_name}."
 
         response_lines = [f"I found the following dining options near {location_name}:"]
         for i, place in enumerate(places, 1):
@@ -320,37 +336,38 @@ class FoodAgent:
             address = place.get("formattedAddress", "No address available")
             response_lines.append(f"{i}. {name} - {address}")
 
-        return TaskState.TASK_STATE_COMPLETED, "\n".join(response_lines)
+        return "\n".join(response_lines)
 
 
     async def _search_via_here(
         self,
         search_params: FoodSearchParams,
-        car_lat: Optional[float],
-        car_lng: Optional[float],
-        api_key: str,
-    ) -> tuple[TaskState, str]:
+        api_key: str
+    ) -> str:
         """Executes food search using HERE Discover API."""
         # Resolve location to coordinates
         if search_params.use_current_location:
-            if car_lat is None or car_lng is None:
-                return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot perform a local search because the vehicle's current GPS data is unavailable."
-            target_lat, target_lng = car_lat, car_lng
+            if not search_params.current_location:
+                return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+            target_lat=search_params.current_location.latitude
+            target_lat=search_params.current_location.longitude
             location_name = "your current location"
         else:
             try:
                 target_lat, target_lng = await geocode_location_here(search_params.target_location, api_key)
                 location_name = f"'{search_params.target_location}'"
             except Exception:
-                return TaskState.TASK_STATE_INPUT_REQUIRED, f"Sorry, I couldn't find the location {search_params.target_location}. Please try specifying a different landmark or city."
+                return f"Sorry, I couldn't find the location {search_params.target_location}. Please try specifying a different landmark or city."
 
-        # Fetch data from HERE API
+
         raw_results = await search_food_here(
+            api_key=api_key,
             lat=target_lat,
             lng=target_lng,
-            query_text=search_params.cuisine_or_type,
-            api_key=api_key
+            cuisine_or_type=search_params.cuisine_or_type,
         )
+
+        # Fetch data from HERE API
 
         items = raw_results.get("items", [])
 
@@ -362,7 +379,7 @@ class FoodAgent:
 
         if not items:
             search_term = search_params.cuisine_or_type if search_params.cuisine_or_type else "dining options"
-            return TaskState.TASK_STATE_COMPLETED, f"I couldn't find any {search_term} within {search_params.search_radius_meters} meters around {location_name}."
+            return f"I couldn't find any {search_term} within {search_params.search_radius_meters} meters around {location_name}."
 
         # Format output into a clean plain text string for A2A pipeline
         response_lines = [f"I found the following dining options near {location_name}:"]
@@ -378,7 +395,7 @@ class FoodAgent:
 
             response_lines.append(f"{i}. {name} - {address} ({distance_str})")
 
-        return TaskState.TASK_STATE_COMPLETED, "\n".join(response_lines)
+        return "\n".join(response_lines)
 
 
 class FoodAgentExecutor(AgentExecutor):
@@ -423,40 +440,33 @@ class FoodAgentExecutor(AgentExecutor):
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
 
-        # Change this if the Orchestrator sends car GPS in a different field.
-        # Currently defaults to Warsaw Center coordinates as a fallback mock.
-        car_lat = getattr(context, 'car_lat', 52.2297)
-        car_lng = getattr(context, 'car_lng', 21.0122)
-
         if query:
             with langfuse.start_as_current_observation(
                 name="food_agent_execute",
                 as_type="span",
                 trace_context=trace_context
             ):
-                state, text = await self.agent.invoke(
-                    user_request=query,
-                    car_lat=car_lat,
-                    car_lng=car_lng
+                result = await self.agent.invoke(
+                    user_request=query
                 )
         else:
-            state, text = TaskState.TASK_STATE_FAILED, 'No text input is provided!'
+            result = 'No text input is provided!'
 
         # Add the agent response as a task artifact to EventQueue
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=text,
+                    text=result,
                     media_type='text/plain'
                 )
             ]
         )
-        print('FoodAgent result: ', TaskState.Name(state), text)
+        print('FoodAgent result: ', result)
 
         # Mark the task as completed
         await task_updater.update_status(
-            state=state,
-            message=new_text_message(text),
+            state=TaskState.TASK_STATE_COMPLETED,
+            message=new_text_message('Restaurant request is completed!'),
         )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

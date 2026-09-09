@@ -1,25 +1,23 @@
 import multiprocess
-from a2a.types import AgentCard, TaskState
+from a2a.types import AgentCard
 from langchain_core.messages import AIMessage
-from langchain_core.prompts import PromptTemplate
 from langfuse import observe
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
 from qdrant_client import QdrantClient
 
 from agents.orchestrator.delegator import Delegator
 from agents.orchestrator.llm import Llm
 from agents.orchestrator.task_division_verifier import TaskDivisionVerifier
-from agents.registry import discover_agents
 from agents.state import GraphState, WorkItem, WorkItemStatus
 from agents.synthesizer import Synthesizer
-from config import get_agent_url, get_max_tasks
-from context.car import create_mock_car
-from contracts.agent_request import AgentRequest
+from config import get_max_tasks, get_agent_url
+from agents.registry import discover_agents
 from utils.a2a_client import call_sub_agent
-from utils.card_loader import load_agent_card
+from contracts.agent_request import AgentRequest
+from context.car import create_mock_car
 from utils.database import search_skill, upload_agents_cards
+from utils.card_loader import load_agent_card
 
 AGENT_NODE = 'agent_node'
 SYNTHESIZER_NODE = 'response_synthesizer'
@@ -94,7 +92,7 @@ async def orchestrator_node(state: GraphState) -> dict:
         delegator = TaskDivisionVerifier(delegator=base_delegator, llm=llm)
 
     raw = delegator.invoke(state, None)
-    print(raw)
+
     if isinstance(raw, dict):
         items = raw.get('tasks', [])
     else:
@@ -121,7 +119,9 @@ async def orchestrator_node(state: GraphState) -> dict:
         query = item.get('query', '')
         request = AgentRequest(user_input= str(state.user_input.content), task= query)
         context = request.select_context(car_context=car, llm=llm)
-
+        
+        matched_agents = search_skill(qdrant_client, query_text=str(query))
+        agent = matched_agents
         agent = search_skill(client, query_text=str(query))
 
         if agent not in get_sub_agent_cards():
@@ -134,21 +134,12 @@ async def orchestrator_node(state: GraphState) -> dict:
                 )
             )
             continue
-        raw_status = str(item.get('status', 'in_progress')).lower().strip()
-
-        #getting status from LLM
-        if 'context' in raw_status:
-            task_status = WorkItemStatus.CONTEXT
-        else:
-            task_status = WorkItemStatus.IN_PROGRESS
 
         new_task = WorkItem(
                 id=task_id,
                 assigned_agent=agent,
                 query=item.get('query'),
-                context=context,
-                status=task_status
-
+                context=context
             )
 
         tasks.append(new_task)
@@ -158,11 +149,7 @@ async def orchestrator_node(state: GraphState) -> dict:
 def route_from_orchestrator(state: GraphState) -> str:
     """Keep visiting the shared agent node while any task is still pending."""
 
-
     for task in state.tasks:
-        print(task)
-        if task.status == WorkItemStatus.CONTEXT:
-            return ASK_USER_NODE
         if task.status == WorkItemStatus.IN_PROGRESS and task.assigned_agent in get_sub_agent_cards():
             return AGENT_NODE
 
@@ -186,19 +173,18 @@ async def agent_node(state: GraphState) -> dict:
             card = cards[task.assigned_agent]
 
             try:
-                query = task.query or str(state.user_input.content)
+                query = f"User request:\n{task.query or str(state.user_input.content)}"
                 if task.context is not None:
-                    query += task.context.get_context_for_query()
-                task_state, text = await call_sub_agent(query, agent_url(card))
+                    query += (
+                        "\n\nAvailable vehicle context:\n"
+                        "```json\n"
+                        f"{task.context.get_context_for_query()}"
+                        "\n```"
+                    )
+                result = await call_sub_agent(query, agent_url(card))
 
-                if task_state == TaskState.TASK_STATE_COMPLETED:
-                    task.status = WorkItemStatus.COMPLETED
-                elif task_state == TaskState.TASK_STATE_INPUT_REQUIRED:
-                    task.status = WorkItemStatus.CONTEXT
-                else:
-                    task.status = WorkItemStatus.FAILED
-
-                task.result = text
+                task.status = WorkItemStatus.COMPLETED
+                task.result = result
 
             except Exception as exc:
                 task.status = WorkItemStatus.FAILED
@@ -215,80 +201,17 @@ async def agent_node(state: GraphState) -> dict:
     return {}
 
 
-async def ask_user_node(state: GraphState) -> dict:
-    global llm
-    if llm is None:
-        llm = Llm()
-
-    context_tasks = [t for t in state.tasks if t.status == WorkItemStatus.CONTEXT]
-    if not context_tasks:
-        return {}
-
-    ask_prompt = PromptTemplate.from_template(
-    "You have the following tasks that require additional information:\n{tasks_info}\n\n"
-    "Prepare request asking the user to provide the missing details."
-    )
-    tasks_summary = "\n".join([f"({t.query})" for t in context_tasks])
-
-    question_to_user = llm(
-        prompt=ask_prompt,
-        inputs={"tasks_info": tasks_summary},
-        asJSON=False,
-        observation_name="ask_user_question"
-    )
-
-
-    user_response = interrupt(str(question_to_user))
-
-
-
-    update_prompt = PromptTemplate.from_template(
-        "The user provided additional information: '{user_response}'.\n"
-        "Here are the tasks that require query refinement:\n{tasks_info}\n\n"
-        "Update the query for these tasks so that they include the provided context.\n"
-        "Return the result strictly as a JSON matching this format: {{\"updates\": [{{\"id\": 1, \"updated_query\": \"...\"}}]}}"
-    )
-
-    tasks_for_update = "\n".join(f"id={t.id}: {t.query}" for t in context_tasks)
-
-    result_dict = llm(
-        prompt=update_prompt,
-        inputs={
-            "user_response": str(user_response),
-            "tasks_info": tasks_for_update
-        },
-        asJSON=True,
-        observation_name="ask_user_query_update"
-    )
-
-
-    if isinstance(result_dict, dict) and "updates" in result_dict:
-        updates_map = {item["id"]: item["updated_query"] for item in result_dict["updates"] if "id" in item}
-
-        for task in state.tasks:
-            if task.id in updates_map:
-                task.query = updates_map[task.id]
-                task.status = WorkItemStatus.IN_PROGRESS
-                task.result = None
-
-    for task in context_tasks:
-        if task.status == WorkItemStatus.CONTEXT:
-            task.query = f"{task.query}. Additional context from the user: {user_response}"
-            task.status = WorkItemStatus.IN_PROGRESS
-            task.result = None
-
-    return {"tasks": state.tasks}
-
-
 async def response_synthesizer_node(state: GraphState) -> dict:
     """
     Response synthesizer node that asks the LLM (Synthesizer) to combine the
-    finished sub-agent results into a final message.
+    sub-agent only COMPLETED and FAILED task results into a final message.
     """
 
     global llm
 
-    if not any(task.result for task in state.tasks):
+    valid_tasks = [t for t in state.tasks if t.status in (WorkItemStatus.COMPLETED, WorkItemStatus.FAILED)]
+
+    if not valid_tasks:
         message = "I couldn't handle that request. Please try again or ask for something else."
         return {'messages': [AIMessage(content=message)]}
 
@@ -303,6 +226,20 @@ async def response_synthesizer_node(state: GraphState) -> dict:
     return {'messages': [AIMessage(content=final_text)]}
 
 
+def check_if_need_context_exist(state: GraphState) -> str:
+    """After synthesis, check if any task needs more context."""
+    for task in state.tasks:
+        if task.status == WorkItemStatus.NEED_CONTEXT:
+            return ASK_USER_NODE
+    return END
+
+
+async def ask_user_node(state: GraphState) -> dict:
+    """Placeholder: will ask the user for missing context in the future."""
+    # TODO: implement context clarification logic
+    return {}
+
+
 graph_builder = StateGraph(GraphState)
 
 graph_builder.add_node('orchestrator', orchestrator_node)
@@ -314,11 +251,13 @@ graph_builder.add_edge(START, 'orchestrator')
 graph_builder.add_conditional_edges('orchestrator', route_from_orchestrator, {
     AGENT_NODE: AGENT_NODE,
     SYNTHESIZER_NODE: SYNTHESIZER_NODE,
-    ASK_USER_NODE: ASK_USER_NODE,
 })
 
 graph_builder.add_edge(AGENT_NODE, 'orchestrator')
-graph_builder.add_edge(SYNTHESIZER_NODE, END)
-graph_builder.add_edge(ASK_USER_NODE, AGENT_NODE)
+graph_builder.add_conditional_edges(SYNTHESIZER_NODE, check_if_need_context_exist, {
+    ASK_USER_NODE: ASK_USER_NODE,
+    END: END,
+})
 
+graph_builder.add_edge(ASK_USER_NODE, END)
 graph = graph_builder.compile(checkpointer=InMemorySaver())

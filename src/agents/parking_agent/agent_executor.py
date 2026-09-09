@@ -1,5 +1,5 @@
 import os
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 import httpx
 from a2a.helpers import (
@@ -29,6 +29,22 @@ load_dotenv()
 langfuse = get_client()
 
 
+class CurrentLocation(BaseModel):
+    latitude: float = Field(
+            description=(
+                "Latitude of the vehicle's current location extracted "
+                "from the vehicle context included in the request"
+                )
+            )
+
+    longitude: float = Field(
+            description=(
+                "Longitude of the vehicle's current location extracted "
+                "from the vehicle context included in the request"
+                )
+            )
+
+
 class ParkingSearchParams(BaseModel):
     use_current_location: bool = Field(
         description=(
@@ -36,14 +52,22 @@ class ParkingSearchParams(BaseModel):
             "False if a specific target location (city, street, address, or landmark) was provided."
         )
     )
+    current_location: Optional[CurrentLocation] = Field(
+        default=None,
+        description=(
+            "The vehicle's current coordinates extracted from the context "
+            "included in the request. "
+            "Provide this only when use_current_location is True and coordinates are available."
+        )
+    )
     target_location: Optional[str] = Field(
         default=None,
         description=(
             "A specific location provided by the driver to search parking around. "
-            "Can be a city (e.g., 'Kraków'), a street (e.g., 'Floriańska'), "
-            "or a landmark (e.g., 'Wawel Castle'). "
-            "Extract ONLY the location name itself. Do NOT include words like 'parking', 'park', "
-            "or 'place to park'. Leave as None if use_current_location is True."
+            "Can be a city, a street, or a point of interest/landmark. "
+            "Extract ONLY the location name itself. " 
+            "Do NOT include words like 'parking', 'park', or 'place to park'. "
+            "Leave as None if use_current_location is True."
         )
     )
     search_radius_meters: int = Field(
@@ -72,7 +96,9 @@ async def extract_parking_search_params(driver_command: str) -> ParkingSearchPar
             "content": (
                 "You are an NLP analysis module inside an in-car voice assistant system. "
                 "Your sole task is to extract parking search parameters "
-                "from the driver's spoken command and map them into the requested JSON schema."
+                "from the complete request. "
+                "The request may contain additional vehicle context in JSON format. "
+                "Use this information when it helps determine search parameters."
             )
         },
         {
@@ -115,7 +141,7 @@ async def search_parking_google(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius: Optional[int] = None,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Searches for parking places using Google Places API."""
     headers = {
         "Content-Type": "application/json",
@@ -174,10 +200,8 @@ class MockParkingAgent:
     async def invoke(
         self,
         user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
-    ) -> tuple[TaskState, str]:
-        return TaskState.TASK_STATE_COMPLETED, (
+    ) -> str:
+        return (
             "[MOCK] I found the following parking options near your current location:\n"
             "1. Example Parking - Testowa 19, Test City, Poland\n"
             "2. Mock Parking Garage - Przykładowa 39, Test City, Poland\n"
@@ -198,41 +222,39 @@ class ParkingAgent:
     async def invoke(
         self,
         user_request: str,
-        car_lat: Optional[float] = None,
-        car_lng: Optional[float] = None
-    ) -> tuple[TaskState, str]:
+    ) -> str:
         try:
             search_params = await extract_parking_search_params(user_request)
 
             google_api_key = os.environ.get("GOOGLE_API_KEY")
             if not google_api_key:
-                return TaskState.TASK_STATE_FAILED, "Error: GOOGLE_API_KEY environment variable is missing on the server."
+                return "Error: GOOGLE_API_KEY environment variable is missing on the server."
 
             if search_params.use_current_location:
-                if car_lat is None or car_lng is None:
-                    return TaskState.TASK_STATE_INPUT_REQUIRED, "I cannot perform a local search because the vehicle's current GPS data is unavailable."
+                if not search_params.current_location:
+                    return "I cannot perform a local search because the vehicle's current GPS data is unavailable."
 
                 raw_results = await search_parking_google(
-                    lat=car_lat,
-                    lng=car_lng,
-                    radius=search_params.search_radius_meters,
                     api_key=google_api_key,
+                    lat=search_params.current_location.latitude,
+                    lng=search_params.current_location.longitude,
+                    radius=search_params.search_radius_meters,
                 )
                 location_name = "your current location"
             else:
                 if not search_params.target_location:
-                    return TaskState.TASK_STATE_INPUT_REQUIRED, "Sorry, I couldn't understand the target location for parking."
+                    return "Sorry, I couldn't understand the target location for parking."
 
                 raw_results = await search_parking_google(
-                    target_location=search_params.target_location,
                     api_key=google_api_key,
+                    target_location=search_params.target_location,
                 )
                 location_name = f"'{search_params.target_location}'"
 
             places = raw_results.get("places", [])
 
             if not places:
-                return TaskState.TASK_STATE_COMPLETED, f"I couldn't find any parking lots within {search_params.search_radius_meters} meters around {location_name}."
+                return f"I couldn't find any parking lots within {search_params.search_radius_meters} meters around {location_name}."
 
             response_lines = [
                 f"I found the following parking options near {location_name}:"
@@ -242,10 +264,10 @@ class ParkingAgent:
                 address = place.get("formattedAddress", "No address available")
                 response_lines.append(f"{i}. {name} - {address}")
 
-            return TaskState.TASK_STATE_COMPLETED, "\n".join(response_lines)
+            return "\n".join(response_lines)
 
         except Exception as e:
-            return TaskState.TASK_STATE_FAILED, f"An error occurred while processing the request: {str(e)}"
+            return f"An error occurred while processing the request: {str(e)}"
 
 
 class ParkingAgentExecutor(AgentExecutor):
@@ -290,40 +312,33 @@ class ParkingAgentExecutor(AgentExecutor):
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
 
-        # Change this if the Orchestrator sends car GPS in a different field.
-        # Currently defaults to Warsaw Center coordinates as a fallback mock.
-        car_lat = getattr(context, 'car_lat', 52.2297)
-        car_lng = getattr(context, 'car_lng', 21.0122)
-
         if query:
             with langfuse.start_as_current_observation(
                 name="parking_agent_execute",
                 as_type="span",
                 trace_context=trace_context
             ):
-                state, text = await self.agent.invoke(
-                    user_request=query,
-                    car_lat=car_lat,
-                    car_lng=car_lng
+                result = await self.agent.invoke(
+                    user_request=query
                 )
         else:
-            state, text = TaskState.TASK_STATE_FAILED, 'No text input is provided!'
+            result = 'No text input is provided!'
 
         # Add the agent response as a task artifact to EventQueue
         await task_updater.add_artifact(
             parts=[
                 new_text_part(
-                    text=text,
+                    text=result,
                     media_type='text/plain'
                 )
             ]
         )
-        print('ParkingAgent result: ', TaskState.Name(state), text)
+        print('ParkingAgent result: ', result)
 
         # Mark the task as completed
         await task_updater.update_status(
-            state=state,
-            message=new_text_message(text),
+            state=TaskState.TASK_STATE_COMPLETED,
+            message=new_text_message('Parking request is completed!'),
         )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

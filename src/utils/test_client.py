@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import uuid
 
 import httpx
@@ -8,6 +9,8 @@ from a2a.types import Role, SendMessageRequest
 
 from config import get_agent_url
 from utils.a2a_response import extract_artifact_text
+
+
 
 ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
@@ -60,8 +63,8 @@ async def chat_loop() -> None:
                 request = SendMessageRequest(message=message)
 
                 async for chunk in client.send_message(request):
-                    print('\n === RAW A2A RESPONSE ===')
-                    print(chunk)
+                    # print('\n === RAW A2A RESPONSE ===')
+                    # print(chunk)
 
                     artifact_text = extract_artifact_text(chunk)
                     print('\n === FINAL ANSWER===')

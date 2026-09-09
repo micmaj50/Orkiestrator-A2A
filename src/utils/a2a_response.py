@@ -4,28 +4,10 @@ from typing import Any
 
 from a2a.types import TaskState
 
-TERMINAL_STATES = frozenset({
-    TaskState.TASK_STATE_COMPLETED,
-    TaskState.TASK_STATE_INPUT_REQUIRED,
-    TaskState.TASK_STATE_FAILED,
-    TaskState.TASK_STATE_REJECTED,
-    TaskState.TASK_STATE_CANCELED,
-    TaskState.TASK_STATE_AUTH_REQUIRED,
-})
-
 
 def _get_task(a2a_response_chunk: Any) -> Any:
     """Return the wrapped task, or assume the chunk is already a task"""
     return getattr(a2a_response_chunk, "task", a2a_response_chunk)
-
-
-def _part_texts(container: Any) -> list[str]:
-    """Every text part of an artifact or a message."""
-    return [
-        part.text for part in getattr(container, 'parts', None) or []
-        if isinstance(getattr(part, 'text', None), str) and part.text
-    ]
-
 
 def extract_artifact_text(a2a_response_chunk: Any) -> str:
     """Extract text from artifact parts in an A2A response chunk.
@@ -33,27 +15,23 @@ def extract_artifact_text(a2a_response_chunk: Any) -> str:
     Also extracts the status message if the task failed.
     """
     task = _get_task(a2a_response_chunk)
+    artifacts = getattr(task, 'artifacts', [])
 
     texts: list[str] = []
 
-    for artifact in getattr(task, 'artifacts', []):
-        texts.extend(_part_texts(artifact))
-
     status = getattr(task, 'status', None)
+    if status and getattr(status, 'state', None) == TaskState.TASK_STATE_FAILED:
+        parts = getattr(getattr(status, 'message', None), 'parts', [])
+        for part in parts:
+            text = getattr(part, 'text', None)
+            if isinstance(text, str):
+                texts.append(f"SYSTEM ERROR: {text}")
 
-    return '\n'.join(texts) or '\n'.join(_part_texts(getattr(status, 'message', None)))
+    for artifact in artifacts:
+        parts = getattr(artifact, 'parts', [])
+        for part in parts:
+            text = getattr(part, 'text', None)
+            if isinstance(text, str):
+                texts.append(text)
 
-
-def extract_agent_result(a2a_response_chunk: Any) -> tuple[TaskState, str] | None:
-    """Read one A2A response chunk as a finished sub-agent result.
-
-    Returns the state and what it had to say, or None
-    while the task is still running.
-    """
-    task = _get_task(a2a_response_chunk)
-    state = getattr(getattr(task, 'status', None), 'state', None)
-
-    if state not in TERMINAL_STATES:
-        return None
-
-    return state, extract_artifact_text(task)
+    return '\n'.join(texts)

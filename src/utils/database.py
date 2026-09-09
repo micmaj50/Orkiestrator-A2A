@@ -1,9 +1,8 @@
 from a2a.types import AgentCard, AgentSkill
-from FlagEmbedding import BGEM3FlagModel
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, VectorParams, PointStruct
+from FlagEmbedding import BGEM3FlagModel
 
-from config import get_min_skill_score
 
 COLLECTION_NAME = "agent_skills"
 
@@ -30,8 +29,7 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
     Returns
     -------
     str | None
-        The name of the best matching agent, or None when nothing is close
-        enough to count as a match.
+        The name of the best matching agent, or None if no matching point/payload is found.
     """
 
 
@@ -42,7 +40,6 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
         collection_name=COLLECTION_NAME,
         query=query_vector,
         limit=1,
-        score_threshold=get_min_skill_score(),
     )
 
     if response.points and response.points[0].payload:
