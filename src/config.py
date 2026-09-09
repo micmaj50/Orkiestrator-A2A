@@ -1,8 +1,9 @@
 import os
 from urllib.parse import urlsplit
-from dotenv import load_dotenv
-from agents.registry import get_agent_definition
 
+from dotenv import load_dotenv
+
+from agents.registry import get_agent_definition
 
 load_dotenv()
 
@@ -50,7 +51,6 @@ DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_MAX_RETRIES = 1
 DEFAULT_EXTERNAL_API_TIMEOUT_SECONDS = 15.0
 DEFAULT_SUB_AGENT_TIMEOUT_SECONDS = 90.0
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 180.0
 
 # How long we wait for one answer from the language model before giving up
 def get_llm_timeout_seconds() -> float:
@@ -81,10 +81,12 @@ def get_sub_agent_timeout_seconds() -> float:
     )
 
 
-# How long one whole user request may take, from the question to the final answer
+# How long one whole user request may take, from the question to the final answer.
+# Tasks run one after another, so their budgets add up, and the
+# extra slot covers the planning and synthesis the orchestrator does around them.
 def get_request_timeout_seconds() -> float:
     return float(
-            os.getenv("REQUEST_TIMEOUT_SECONDS", str(DEFAULT_REQUEST_TIMEOUT_SECONDS))
+            os.getenv("REQUEST_TIMEOUT_SECONDS", str((get_max_tasks() + 1) * get_sub_agent_timeout_seconds()))
     )
 
 
@@ -123,6 +125,18 @@ def get_graph_recursion_limit() -> int:
             GRAPH_STEPS_PER_TASK * get_max_tasks()
             + GRAPH_STEPS_OVERHEAD
             + GRAPH_STEPS_SLACK
+    )
+
+
+
+# Routing limits.
+# Similarity below which the nearest skill is not a real match.
+DEFAULT_MIN_SKILL_SCORE = 0.5
+
+
+def get_min_skill_score() -> float:
+    return float(
+            os.getenv("MIN_SKILL_SCORE", str(DEFAULT_MIN_SKILL_SCORE))
     )
 
 

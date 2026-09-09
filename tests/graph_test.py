@@ -5,6 +5,7 @@ import asyncio
 import uuid
 
 import pytest
+from a2a.types import TaskState
 from langchain_core.messages import HumanMessage
 
 from agents import graph as graph_module
@@ -58,13 +59,13 @@ class FakeSubAgents:
         self.calls: list[tuple[str, str]] = []
         self.broken_url = broken_url
 
-    async def __call__(self, user_request: str, agent_url: str) -> str:
+    async def __call__(self, user_request: str, agent_url: str) -> tuple:
         self.calls.append((user_request, agent_url))
 
         if agent_url == self.broken_url:
             raise RuntimeError('sub-agent is down')
 
-        return f'answer from {agent_url}'
+        return TaskState.TASK_STATE_COMPLETED, f'answer from {agent_url}'
 
 
 def task(agent: str, query: str | None = None, task_id=1) -> dict:
@@ -282,3 +283,27 @@ def test_route_from_orchestrator(tasks, expected):
     )
 
     assert route_from_orchestrator(state) == expected
+
+
+@pytest.mark.parametrize(('task_state', 'expected'), [
+    (TaskState.TASK_STATE_COMPLETED, WorkItemStatus.COMPLETED),
+    (TaskState.TASK_STATE_INPUT_REQUIRED, WorkItemStatus.CONTEXT),
+    (TaskState.TASK_STATE_FAILED, WorkItemStatus.FAILED),
+    (TaskState.TASK_STATE_REJECTED, WorkItemStatus.FAILED),
+])
+def test_how_the_sub_agent_ended_becomes_the_work_item_status(monkeypatch, task_state, expected):
+    """A sub-agent that answered is not a sub-agent that succeeded."""
+
+    async def sub_agent(user_request, agent_url):
+        return task_state, 'what the agent said'
+
+    monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agent)
+
+    state = GraphState(
+        user_input=HumanMessage(content='find gas'),
+        tasks=[WorkItem(id=1, assigned_agent='gas_agent', query='find gas')],
+    )
+
+    result = asyncio.run(graph_module.agent_node(state))
+
+    assert result['tasks'][0].status == expected
