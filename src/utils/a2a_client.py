@@ -9,7 +9,6 @@ from langfuse import get_client
 from config import get_sub_agent_timeout_seconds
 from utils.a2a_response import extract_artifact_text
 
-
 langfuse = get_client()
 
 

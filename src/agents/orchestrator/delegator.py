@@ -7,12 +7,7 @@ from langchain_core.prompts import PromptTemplate
 from agents.orchestrator.llm import Llm
 from agents.state import GraphState, WorkItem
 
-
-question_prompt = PromptTemplate.from_template("""
-
-You are the  Orchestrator running in a LangGraph workflow. Your job is to analyze user requests, manage the multi-agent execution state, and delegate tasks using the A2A (Agent2Agent) protocol.
-
-
+question_prompt = PromptTemplate.from_template("""You are the Orchestrator running in a LangGraph workflow. Your job is to analyze user requests, manage the multi-agent execution state, and delegate tasks using the A2A (Agent2Agent) protocol.
 
 ---
 The current session metrics and history extracted from the graph state:
@@ -44,6 +39,9 @@ Review the current user input against the conversation history and active tasks 
 3. RESOLVE CONTEXT: When generating task queries, resolve ALL contextual references (e.g., "there", "that place", "it") using the conversation history.
 Sub-agents have NO access to conversation history, so each query MUST be fully self-contained and explicit.
 For example, if the user previously asked about Warsaw and now asks "What about gas stations there?", the query must be "gas stations in Warsaw", NOT "gas stations there".
+4. STATUS EVALUATION:
+   - Set status to "in_progress" if the task has sufficient context to be executed directly by the sub-agent.
+   - Set status to "context" ONLY if crucial information is missing (e.g., location, specific mandatory parameters).
 ---
 You must respond strictly in JSON format. Return only task. Here is the form:
 
@@ -59,8 +57,6 @@ You must respond strictly in JSON format. Return only task. Here is the form:
     }}
     ]
 }}
-
-
 """)
 
 

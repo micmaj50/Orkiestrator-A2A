@@ -14,6 +14,7 @@ class WorkItemStatus(str, Enum):
     NEED_CONTEXT = "need_context"
     COMPLETED = "completed"
     FAILED = "failed"
+    CONTEXT = "context"
 
 class WorkItem(BaseModel):
     id: int

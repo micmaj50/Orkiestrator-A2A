@@ -13,6 +13,7 @@ from a2a.types import TaskState
 from langchain_core.messages import HumanMessage
 from langfuse import get_client, observe
 from langgraph.errors import GraphRecursionError
+from langgraph.types import Command
 
 from agents.graph import graph
 from agents.state import GraphState
@@ -31,24 +32,40 @@ class Orchestrator:
             capture_output=False
     )
     async def invoke(self, user_request: str, thread_id: str) -> str:
-        user_msg = HumanMessage(content=user_request)
-
-        state = GraphState(
-            user_input=user_msg,
-            messages=[user_msg],
-            tasks=[],
-            )
 
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": get_graph_recursion_limit()}
+
+        state = await graph.aget_state(config)
+        is_paused = len(state.next) > 0 if state else False
 
         # graph.ainvoke returns the final state as a dict-like mapping
         # (channel name -> value) for a pydantic state schema.
         #
         # This is the outermost cap on the whole run, so a request can never hang.
-        result = await asyncio.wait_for(
-            graph.ainvoke(state, config),
-            timeout=get_request_timeout_seconds(),
-        )
+        if is_paused:
+
+            result = await asyncio.wait_for(
+                graph.ainvoke(Command(resume=user_request), config),
+                timeout=get_request_timeout_seconds(),
+            )
+        else:
+
+            user_msg = HumanMessage(content=user_request)
+
+            initial_state = GraphState(
+                user_input=user_msg,
+                messages=[user_msg],
+                tasks=[],
+                )
+            result = await asyncio.wait_for(
+                graph.ainvoke(initial_state, config),
+                timeout=get_request_timeout_seconds(),
+            )
+
+        new_state = await graph.aget_state(config)
+        if new_state.next and new_state.tasks and new_state.tasks[0].interrupts:
+
+            return str(new_state.tasks[0].interrupts[0].value)
 
         if isinstance(result, GraphState):
             messages = result.messages
@@ -108,13 +125,13 @@ class OrchestratorExecutor(AgentExecutor):
 
         # 3. Extract the user's text and pass it to the orchestrator graph
         query = get_message_text(context.message)
+        thread_id = str(task.context_id or task.id)
         langfuse = get_client()
         langfuse.update_current_span(
             input={"user_request": query}
         )
         try:
             if query:
-                thread_id = task.context_id or str(task.id)
                 result = await self.agent.invoke(user_request=query, thread_id=thread_id)
             else:
                 result = 'No text input is provided!'
@@ -135,10 +152,21 @@ class OrchestratorExecutor(AgentExecutor):
             print('Orchestrator result: ', result)
 
             # 5. Update task status to completed
-            await task_updater.update_status(
-                state=TaskState.TASK_STATE_COMPLETED,
-                message=new_text_message('Sub-agent request is completed!'),
-            )
+            config = {"configurable": {"thread_id": thread_id}}
+            graph_state = await graph.aget_state(config)
+
+            if graph_state and graph_state.next:
+
+                await task_updater.update_status(
+                    state=TaskState.TASK_STATE_INPUT_REQUIRED,
+                    message=new_text_message('Waiting for user input...'),
+                )
+            else:
+
+                await task_updater.update_status(
+                    state=TaskState.TASK_STATE_COMPLETED,
+                    message=new_text_message('Sub-agent request is completed!'),
+                )
         except TimeoutError:
             await task_updater.update_status(
                 state=TaskState.TASK_STATE_FAILED,
