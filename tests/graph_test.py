@@ -307,3 +307,96 @@ def test_how_the_sub_agent_ended_becomes_the_work_item_status(monkeypatch, task_
     result = asyncio.run(graph_module.agent_node(state))
 
     assert result['tasks'][0].status == expected
+
+
+def test_the_delegator_cannot_put_a_task_into_context(run_flow):
+    """Only a sub-agent decides that a task is missing something."""
+
+    guessed = task('gas_agent', 'find gas')
+    guessed['status'] = 'context'
+
+    result, _, sub_agents = run_flow('find gas', [guessed])
+
+    # The task went straight to its agent instead of stopping to ask the user.
+    assert [url for _, url in sub_agents.calls] == [GAS_AGENT_URL]
+    assert result['tasks'][0].status == WorkItemStatus.COMPLETED
+
+
+def test_the_question_repeats_what_the_agent_said_was_missing(monkeypatch):
+    """The user is asked in the agent's own words, not just the bare query."""
+
+    asked: dict = {}
+
+    class RecordingLlm:
+        def __call__(self, prompt, inputs, asJSON, observation_name=""):
+            prompt.invoke(inputs)
+
+            if observation_name == 'ask_user_question':
+                asked.update(inputs)
+                return 'Where are you?'
+
+            return {'updates': []}
+
+    monkeypatch.setattr(graph_module, 'llm', RecordingLlm())
+    monkeypatch.setattr(graph_module, 'interrupt', lambda question: 'I am in Radom')
+
+    state = GraphState(
+        user_input=HumanMessage(content='find gas'),
+        tasks=[
+            WorkItem(
+                id=1,
+                assigned_agent='gas_agent',
+                query='find gas',
+                status=WorkItemStatus.CONTEXT,
+                result='I cannot search locally because the GPS data is unavailable.',
+            )
+        ],
+    )
+
+    result = asyncio.run(graph_module.ask_user_node(state))
+
+    assert 'GPS data is unavailable' in asked['tasks_info']
+
+    # The answer sends the task back to its agent.
+    assert result['tasks'][0].status == WorkItemStatus.IN_PROGRESS
+    assert 'I am in Radom' in str(result['tasks'][0].query)
+
+    # The exchange is recorded, so the next turn can see what was asked.
+    question, answer = result['messages']
+    assert question.content == 'Where are you?'
+    assert answer.content == 'I am in Radom'
+
+
+@pytest.mark.parametrize('task_state', [
+    TaskState.TASK_STATE_COMPLETED,
+    TaskState.TASK_STATE_INPUT_REQUIRED,
+    TaskState.TASK_STATE_FAILED,
+])
+def test_the_agent_node_keeps_results_out_of_the_conversation(monkeypatch, task_state):
+    """A result rides on its task, however it ended. History is what was said."""
+
+    async def sub_agent(user_request, agent_url):
+        return task_state, 'what the agent said'
+
+    monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agent)
+
+    state = GraphState(
+        user_input=HumanMessage(content='find gas'),
+        tasks=[WorkItem(id=1, assigned_agent='gas_agent', query='find gas')],
+    )
+
+    result = asyncio.run(graph_module.agent_node(state))
+
+    assert 'messages' not in result
+    assert result['tasks'][0].result == 'what the agent said'
+
+
+def test_the_synthesizer_still_gets_results_the_history_no_longer_carries(run_flow):
+    """Tasks are now the only route from a sub-agent to the synthesizer."""
+
+    _, llm, _ = run_flow('find gas', [task('gas_agent', 'find gas')])
+
+    assert GAS_AGENT_URL in llm.synthesizer_inputs['agent_answers']
+
+    # And the raw result is not replayed as something the assistant said.
+    assert f'answer from {GAS_AGENT_URL}' not in llm.synthesizer_inputs['conversation_history']
