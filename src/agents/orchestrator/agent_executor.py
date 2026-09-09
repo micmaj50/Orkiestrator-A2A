@@ -177,6 +177,11 @@ class OrchestratorExecutor(AgentExecutor):
                 state=TaskState.TASK_STATE_FAILED,
                 message=new_text_message('The request could not be completed. Please try rephrasing it.'),
             )
+        except Exception as exc:
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_FAILED,
+                message=new_text_message(f'The request could not be completed: {exc}'),
+            )
 
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
