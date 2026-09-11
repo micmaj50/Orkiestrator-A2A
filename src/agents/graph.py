@@ -178,9 +178,11 @@ async def agent_node(state: GraphState) -> dict:
 
             try:
                 query = task.query or str(state.user_input.content)
+                car_gps: dict = {}
                 if task.context is not None:
                     query += task.context.get_context_for_query()
-                task_state, text = await call_sub_agent(query, agent_url(card))
+                    car_gps = task.context.get_location_metadata()
+                task_state, text = await call_sub_agent(query, agent_url(card), metadata=car_gps)
 
                 if task_state == TaskState.TASK_STATE_COMPLETED:
                     task.status = WorkItemStatus.COMPLETED

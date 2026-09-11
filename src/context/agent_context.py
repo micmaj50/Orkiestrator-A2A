@@ -47,3 +47,13 @@ class AgentContext(ConfiguredBaseModel):
     def get_context_for_query(self) -> str:
         context = self.model_dump_json(exclude_none=True)
         return f" Current car metrics: {context}"
+
+    def get_location_metadata(self) -> dict[str, float]:
+        """Car GPS the sub-agents read from the message metadata, when selected."""
+        if self.current_location is None:
+            return {}
+
+        return {
+            "car_lat": self.current_location.latitude,
+            "car_lng": self.current_location.longitude,
+        }

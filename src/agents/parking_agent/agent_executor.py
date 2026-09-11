@@ -290,10 +290,10 @@ class ParkingAgentExecutor(AgentExecutor):
         # Extract the request text and parse available telemetry from context
         query = get_message_text(context.message)
 
-        # Change this if the Orchestrator sends car GPS in a different field.
-        # Currently defaults to Warsaw Center coordinates as a fallback mock.
-        car_lat = getattr(context, 'car_lat', 52.2297)
-        car_lng = getattr(context, 'car_lng', 21.0122)
+        # The Orchestrator sends the car GPS in the message metadata. Without it
+        # the agent asks the driver for a location instead of guessing one.
+        car_lat = metadata['car_lat'] if 'car_lat' in metadata else None
+        car_lng = metadata['car_lng'] if 'car_lng' in metadata else None
 
         if query:
             with langfuse.start_as_current_observation(

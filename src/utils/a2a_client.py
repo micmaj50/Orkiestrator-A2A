@@ -1,5 +1,7 @@
 """Minimal A2A client helper for calling sub-agents over the A2A protocol."""
 
+from typing import Any
+
 import httpx
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, create_client
 from a2a.helpers import new_text_message
@@ -12,7 +14,11 @@ from utils.a2a_response import extract_agent_result
 langfuse = get_client()
 
 
-async def call_sub_agent(user_request: str, agent_url: str) -> tuple[TaskState, str]:
+async def call_sub_agent(
+    user_request: str,
+    agent_url: str,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[TaskState, str]:
     """Send a text request to an A2A sub-agent and return how it ended and what it said."""
 
     trace_id = langfuse.get_current_trace_id()
@@ -43,6 +49,10 @@ async def call_sub_agent(user_request: str, agent_url: str) -> tuple[TaskState, 
                 "langfuse_trace_id": trace_id,
                 "langfuse_parent_observation_id": parent_observation_id
             })
+
+        # Structured context (e.g. the car GPS) the sub-agent reads as data.
+        if metadata:
+            message.metadata.update(metadata)
 
         # Build and send the request as an A2A user message
         request = SendMessageRequest(message=message)

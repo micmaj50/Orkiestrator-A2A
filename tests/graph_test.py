@@ -11,7 +11,9 @@ from langchain_core.messages import HumanMessage
 from agents import graph as graph_module
 from agents.graph import graph, route_from_orchestrator
 from agents.state import GraphState, WorkItem, WorkItemStatus
+from common.location import Coordinates
 from config import get_agent_url
+from context.agent_context import AgentContext
 
 FINAL_ANSWER = 'Final answer for the driver.'
 FALLBACK = "I couldn't handle that request."
@@ -57,10 +59,12 @@ class FakeSubAgents:
 
     def __init__(self, broken_url: str | None = None):
         self.calls: list[tuple[str, str]] = []
+        self.metadata: list[dict | None] = []
         self.broken_url = broken_url
 
-    async def __call__(self, user_request: str, agent_url: str) -> tuple:
+    async def __call__(self, user_request: str, agent_url: str, metadata: dict | None = None) -> tuple:
         self.calls.append((user_request, agent_url))
+        self.metadata.append(metadata)
 
         if agent_url == self.broken_url:
             raise RuntimeError('sub-agent is down')
@@ -216,6 +220,36 @@ def test_agent_node_falls_back_to_the_user_input_when_query_is_missing(monkeypat
 
     assert result["tasks"][0].status == WorkItemStatus.COMPLETED
 
+
+@pytest.mark.parametrize(("context", "expected"), [
+    (AgentContext(current_location=Coordinates(latitude=53.4289, longitude=14.5530)),
+     {"car_lat": 53.4289, "car_lng": 14.5530}),
+    # Location was not part of the selected context, so there is none to send.
+    (AgentContext(speed_kmh=60), {}),
+    (None, {}),
+])
+def test_the_car_position_reaches_the_sub_agent_as_metadata(monkeypatch, context, expected):
+    """A sub-agent reads the GPS as data, instead of falling back to a fixed city."""
+
+    sub_agents = FakeSubAgents()
+    monkeypatch.setattr(graph_module, "call_sub_agent", sub_agents)
+
+    state = GraphState(
+        user_input=HumanMessage(content="what is the weather"),
+        tasks=[
+            WorkItem(
+                id=1,
+                assigned_agent="weather_agent",
+                query="what is the weather",
+                context=context,
+            )
+        ],
+    )
+
+    asyncio.run(graph_module.agent_node(state))
+
+    assert sub_agents.metadata == [expected]
+
 def test_failing_sub_agent_is_recorded_and_does_not_break_the_flow(run_flow):
     """A dead sub-agent marks its task FAILED, the rest of the flow continues."""
 
@@ -294,7 +328,7 @@ def test_route_from_orchestrator(tasks, expected):
 def test_how_the_sub_agent_ended_becomes_the_work_item_status(monkeypatch, task_state, expected):
     """A sub-agent that answered is not a sub-agent that succeeded."""
 
-    async def sub_agent(user_request, agent_url):
+    async def sub_agent(user_request, agent_url, metadata=None):
         return task_state, 'what the agent said'
 
     monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agent)
@@ -375,7 +409,7 @@ def test_the_question_repeats_what_the_agent_said_was_missing(monkeypatch):
 def test_the_agent_node_keeps_results_out_of_the_conversation(monkeypatch, task_state):
     """A result rides on its task, however it ended. History is what was said."""
 
-    async def sub_agent(user_request, agent_url):
+    async def sub_agent(user_request, agent_url, metadata=None):
         return task_state, 'what the agent said'
 
     monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agent)
