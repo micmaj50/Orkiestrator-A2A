@@ -12,6 +12,10 @@ from agents.orchestrator.delegator import Delegator
 from agents.orchestrator.llm import Llm
 from agents.orchestrator.task_division_verifier import TaskDivisionVerifier
 from agents.registry import discover_agents
+from agents.remote_registry import (
+    fetch_remote_agent_cards,
+    load_remote_agent_configs
+)
 from agents.state import GraphState, WorkItem, WorkItemStatus
 from agents.synthesizer import Synthesizer
 from config import get_agent_url, get_max_tasks
@@ -31,11 +35,8 @@ synthesizer = Synthesizer()
 qdrant_client: QdrantClient | None = None
 car = create_mock_car()
 _sub_agent_cards: dict[str, AgentCard] | None = None
+_remote_agents_loaded = False
 
-def agent_url(card: AgentCard) -> str:
-    """Where the agent listens."""
-
-    return str(card.supported_interfaces[0].url)
 
 def _safe_del(self):
     try:
@@ -68,6 +69,32 @@ def get_sub_agent_cards() -> dict[str, AgentCard]:
     return _sub_agent_cards
 
 
+async def register_remote_agents() -> None:
+    """Add available remote agents to the local sub-agent card registry."""
+
+    global _remote_agents_loaded
+
+    if _remote_agents_loaded:
+        return
+
+    configs, errors = load_remote_agent_configs()
+    remote_cards, fetch_errors = await fetch_remote_agent_cards(configs)
+    errors.extend(fetch_errors)
+
+    cards = get_sub_agent_cards()
+    for key, card in remote_cards.items():
+        if key in cards:
+            errors.append(f"Remote agent key conflicts with a local agent: {key}")
+            continue
+
+        cards[key] = card
+
+    for error in errors:
+        print(f"Remote agent registration warning: {error}")
+    
+    _remote_agents_loaded = True
+
+
 def get_qdrant_client() -> QdrantClient:
     global qdrant_client
 
@@ -82,6 +109,8 @@ async def orchestrator_node(state: GraphState) -> dict:
     """Orchestrator node that asks the LLM (Delegator) which sub-agent(s) to call."""
 
     global llm, delegator
+
+    await register_remote_agents()
     client =  get_qdrant_client()
     if state.tasks:
         return {}
@@ -191,7 +220,7 @@ async def agent_node(state: GraphState) -> dict:
                 query = task.query or str(state.user_input.content)
                 if task.context is not None:
                     query += task.context.get_context_for_query()
-                result = await call_sub_agent(query, agent_url(card))
+                result = await call_sub_agent(query, card)
 
                 task.status = WorkItemStatus.COMPLETED
                 task.result = result

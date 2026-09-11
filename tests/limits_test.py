@@ -1,8 +1,9 @@
 """Tests for the execution limits."""
 
 import asyncio
-
 import pytest
+from typing import cast
+from a2a.types import AgentCard
 
 import config
 from utils import a2a_client
@@ -50,22 +51,13 @@ def test_recursion_limit_leaves_room_for_a_full_run(monkeypatch):
     assert config.get_graph_recursion_limit() > cost_of_a_full_run
 
 
-class FakeResolver:
-    """Replaces `A2ACardResolver`: the card is irrelevant to these tests."""
-
-    def __init__(self, httpx_client, base_url):
-        self.base_url = base_url
-
-    async def get_agent_card(self):
-        return object()
-
-
 class FakeSubAgentClient:
     """Replaces the A2A client: records the context it was called with."""
 
     def __init__(self):
         self.contexts = []
         self.closed = False
+        self.agent = None
 
     async def send_message(self, request, *, context=None):
         self.contexts.append(context)
@@ -92,9 +84,9 @@ def fake_sub_agent(monkeypatch):
     client = FakeSubAgentClient()
 
     async def fake_create_client(agent, client_config):
+        client.agent = agent
         return client
 
-    monkeypatch.setattr(a2a_client, 'A2ACardResolver', FakeResolver)
     monkeypatch.setattr(a2a_client, 'create_client', fake_create_client)
 
     return client
@@ -107,10 +99,12 @@ def test_sub_agent_call_carries_the_configured_timeout(monkeypatch, fake_sub_age
     """
 
     monkeypatch.setenv('SUB_AGENT_TIMEOUT_SECONDS', '42')
+    agent_card = cast(AgentCard, object())
 
-    result = asyncio.run(a2a_client.call_sub_agent('find gas', 'http://gas-agent:9998'))
+    result = asyncio.run(a2a_client.call_sub_agent('find gas', agent_card))
 
     assert result == 'answer from the sub-agent'
+    assert fake_sub_agent.agent is agent_card
     assert [context.timeout for context in fake_sub_agent.contexts] == [42.0]
     assert fake_sub_agent.closed
 
