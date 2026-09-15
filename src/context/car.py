@@ -1,7 +1,6 @@
-from enum import StrEnum
 from typing import Literal
-from datetime import datetime
-from pydantic import BaseModel, Field
+from datetime import datetime, UTC
+from pydantic import Field
 
 from common.fuel import FuelType
 from common.location import Coordinates
@@ -13,7 +12,7 @@ class VehicleProfile(ConfiguredBaseModel):
     """Relatively stable vehicle properties.
 
     Kept separate from telemetry because these values are not expected to change.
-    
+
     TODO: Decide which properties are required by current future and future agents.
     Possible fields:
     - vehicle type;
@@ -27,7 +26,7 @@ class VehicleProfile(ConfiguredBaseModel):
 
 class VehicleTelemetry(ConfiguredBaseModel):
     """Current, frequently changing vehicle data.
-    
+
     TODO: Decide which live values should be exposed.
     Possible fields:
     - speed;
@@ -44,7 +43,7 @@ class VehicleTelemetry(ConfiguredBaseModel):
 
     cabin_temperature_c: float | None = Field(default=None)
     outside_temperature_c: float | None = Field(default=None)
-    
+
     ignition_state: Literal["OFF", "ACC", "ON", "STARTING"] | None = Field(default=None)
     odometer_km: float | None = Field(default=None, ge=0)
 
@@ -55,10 +54,15 @@ class CarContext(ConfiguredBaseModel):
     telemetry: VehicleTelemetry
 
 def create_mock_car(
-        current_location = Coordinates(latitude=53.4289, longitude=14.5530),
-        remaining_range_km = 100.0,
-        observed_at = datetime.now(),
+        current_location: Coordinates | None = None,
+        remaining_range_km: float = 100.0,
+        observed_at: datetime | None = None,
 ) -> CarContext:
+    if current_location is None:
+        current_location = Coordinates(latitude=53.4289, longitude=14.5530)
+    if observed_at is None:
+        observed_at = datetime.now(tz=UTC)
+
     vp = VehicleProfile(fuel_type=FuelType.PETROL_95,
                         tank_capacity=40.0)
     vt = VehicleTelemetry(current_location=current_location,

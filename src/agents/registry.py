@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-
 AGENTS_ROOT = Path(__file__).resolve().parent
 ORCHESTRATOR_KEY = "orchestrator"
 
@@ -38,9 +37,12 @@ def _read_default_url(card_path: Path) -> str:
     try:
         data = json.loads(card_path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
-            raise ValueError
+            raise TypeError
 
         interfaces = data.get("supported_interfaces") or data.get("supportedInterfaces")
+        if not interfaces:
+            raise ValueError
+
         default_url = interfaces[0]["url"]
 
         parsed_url = urlsplit(default_url)
@@ -88,4 +90,3 @@ def get_agent_definition(agent_key: str) -> AgentDefinition:
             return definition
 
     raise AgentDiscoveryError(f"Unknown agent: {agent_key}")
-

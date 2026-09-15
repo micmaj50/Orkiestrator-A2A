@@ -92,9 +92,14 @@ class Delegator:
             "DIVISION_FEEDBACK": division_feedback or "No previous attempt. Create the initial task division."
         }
 
-        return self.Llm(
+        result = self.Llm(
             prompt=question_prompt,
             inputs=inputs,
             asJSON=True,
             observation_name="routing_planning"
         )
+
+        if not isinstance(result, dict):
+            return {"tasks": []}
+
+        return result

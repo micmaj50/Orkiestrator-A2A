@@ -45,5 +45,4 @@ class AgentContext(ConfiguredBaseModel):
         return cls.model_validate(values)
     
     def get_context_for_query(self) -> str:
-        context = self.model_dump_json(exclude_none=True)
-        return f" Current car metrics: {context}"
+        return self.model_dump_json(exclude_none=True)
