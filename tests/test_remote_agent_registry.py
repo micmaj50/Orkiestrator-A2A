@@ -110,7 +110,7 @@ class FakeCardResolver:
     def __init__(self, httpx_client, base_url: str):
         self.base_url = base_url
 
-    async def get_agent_card(self):
+    async def get_agent_card(self, relative_card_path: str | None = None):
         if "unavailable" in self.base_url:
             raise RuntimeError("endpoint unavailable")
 
@@ -188,3 +188,59 @@ def test_duplicate_remote_agent_key_is_reported(monkeypatch) -> None:
 
     assert cards == {"weather_remote": "https://first.example.com"}
     assert errors == ["Duplicate remote agent key: weather_remote"]
+
+
+def test_reads_card_path_from_the_database(tmp_path: Path) -> None:
+    database_path = tmp_path / "database.json"
+    write_database(
+        database_path,
+        {
+            "remote_agents": [
+                {
+                    "key": "legacy_remote",
+                    "base_url": "https://legacy.example.com",
+                    "card_path": "/.well-known/agent.json"
+                },
+                {
+                    "key": "weather_remote",
+                    "base_url": "https://weather.example.com"
+                }
+            ]
+        }
+    )
+
+    agents, errors = load_remote_agent_configs(database_path)
+
+    assert errors == []
+    assert agents[0].card_path == "/.well-known/agent.json"
+    assert agents[1].card_path is None
+
+
+def test_card_path_is_passed_to_the_resolver(monkeypatch) -> None:
+    requested_paths: list[str | None] = []
+
+    class RecordingCardResolver(FakeCardResolver):
+        async def get_agent_card(self, relative_card_path: str | None = None):
+            requested_paths.append(relative_card_path)
+
+            return await super().get_agent_card(relative_card_path)
+
+    monkeypatch.setattr(remote_registry, "A2ACardResolver", RecordingCardResolver)
+    configs = [
+        RemoteAgentConfig(
+            key="legacy_remote",
+            base_url="https://legacy.example.com",
+            card_path="/.well-known/agent.json"
+        ),
+        RemoteAgentConfig(
+            key="weather_remote",
+            base_url="https://weather.example.com"
+        )
+    ]
+
+    cards, errors = asyncio.run(fetch_remote_agent_cards(configs))
+
+    assert errors == []
+    assert set(cards) == {"legacy_remote", "weather_remote"}
+    # An agent without a card path leaves the well known path to the resolver.
+    assert requested_paths == ["/.well-known/agent.json", None]

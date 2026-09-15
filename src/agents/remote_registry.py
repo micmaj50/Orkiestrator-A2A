@@ -17,6 +17,9 @@ class RemoteAgentConfig(BaseModel):
 
     key: str
     base_url: AnyHttpUrl
+    # Where the agent publishes its card, when it is not the well known path.
+    # Agents older than A2A 0.3 serve `/.well-known/agent.json` instead.
+    card_path: str | None = None
     enabled: bool = True
 
 
@@ -84,7 +87,7 @@ async def fetch_remote_agent_cards(
                 A2ACardResolver(
                     httpx_client=client,
                     base_url=str(agent.base_url).rstrip("/")
-                ).get_agent_card(),
+                ).get_agent_card(agent.card_path),
                 timeout=timeout
             )
             for agent in unique_agents

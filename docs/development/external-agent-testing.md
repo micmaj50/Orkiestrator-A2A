@@ -93,9 +93,20 @@ later call goes to the URL inside the card. The sample advertises
 breaks from inside a container. A remote agent that advertises an unreachable
 address cannot be redirected from `database.json`.
 
-**Only `/.well-known/agent-card.json` is probed.** Agents older than A2A 0.3
-publish `/.well-known/agent.json` and fail registration with an HTTP 404
-warning. The sample serves both paths, so it is unaffected.
+**Older agents need their card path spelled out.** Registration looks for
+`/.well-known/agent-card.json`. Agents older than A2A 0.3 publish
+`/.well-known/agent.json` and fail with an HTTP 404 warning until the entry
+carries `card_path`:
+
+```json
+{
+  "key": "legacy_agent",
+  "base_url": "http://127.0.0.1:10002",
+  "card_path": "/.well-known/agent.json"
+}
+```
+
+The sample serves both paths, so it does not need this.
 
 **Chunked artifacts arrive as separate lines.** The sample emits one artifact per
 streamed token, and `extract_artifact_text` joins artifacts with newlines, so its
