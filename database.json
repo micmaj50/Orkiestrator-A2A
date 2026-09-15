@@ -1,3 +1,9 @@
 {
-  "remote_agents": []
+  "remote_agents": [
+    {
+      "key": "travel_planner",
+      "base_url": "http://127.0.0.1:10001",
+      "enabled": false
+    }
+  ]
 }
