@@ -1,6 +1,6 @@
 import multiprocess
 from a2a.types import AgentCard, TaskState
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import PromptTemplate
 from langfuse import observe
 from langgraph.checkpoint.memory import InMemorySaver
@@ -93,7 +93,7 @@ async def register_remote_agents() -> None:
 
     for error in errors:
         print(f"Remote agent registration warning: {error}")
-    
+
     if new_remote_agents and qdrant_client is not None:
         # A caller may have initialized Qdrant before registration.
         # Rebuild the cached index so newly registered remote agents are searchable too.
@@ -174,21 +174,12 @@ async def orchestrator_node(state: GraphState) -> dict:
                 )
             )
             continue
-        raw_status = str(item.get('status', 'in_progress')).lower().strip()
-
-        #getting status from LLM
-        if 'context' in raw_status:
-            task_status = WorkItemStatus.CONTEXT
-        else:
-            task_status = WorkItemStatus.IN_PROGRESS
 
         new_task = WorkItem(
                 id=task_id,
                 assigned_agent=agent,
                 query=item.get('query'),
                 context=context,
-                status=task_status
-
             )
 
         tasks.append(new_task)
@@ -249,13 +240,7 @@ async def agent_node(state: GraphState) -> dict:
                 task.status = WorkItemStatus.FAILED
                 task.result = f'{card.name} call failed: {exc}'
 
-            output: dict = {'tasks': state.tasks}
-
-            if task.result:
-                # Publish the result on messages so the synthesizer can read it.
-                output['messages'] = [AIMessage(content=task.result)]
-
-            return output
+            return {'tasks': state.tasks}
 
     return {}
 
@@ -270,10 +255,11 @@ async def ask_user_node(state: GraphState) -> dict:
         return {}
 
     ask_prompt = PromptTemplate.from_template(
-    "You have the following tasks that require additional information:\n{tasks_info}\n\n"
+    "You have the following tasks that require additional information.\n"
+    "Every line is a task, followed by what its agent said it was missing:\n{tasks_info}\n\n"
     "Prepare request asking the user to provide the missing details."
     )
-    tasks_summary = "\n".join([f"({t.query})" for t in context_tasks])
+    tasks_summary = "\n".join(f"({t.query}) {t.result or ''}" for t in context_tasks)
 
     question_to_user = llm(
         prompt=ask_prompt,
@@ -322,7 +308,13 @@ async def ask_user_node(state: GraphState) -> dict:
             task.status = WorkItemStatus.IN_PROGRESS
             task.result = None
 
-    return {"tasks": state.tasks}
+    return {
+        "tasks": state.tasks,
+        "messages": [
+            AIMessage(content=str(question_to_user)),
+            HumanMessage(content=str(user_response)),
+        ],
+    }
 
 
 async def response_synthesizer_node(state: GraphState) -> dict:

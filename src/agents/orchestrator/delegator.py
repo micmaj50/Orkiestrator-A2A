@@ -39,9 +39,7 @@ Review the current user input against the conversation history and active tasks 
 3. RESOLVE CONTEXT: When generating task queries, resolve ALL contextual references (e.g., "there", "that place", "it") using the conversation history.
 Sub-agents have NO access to conversation history, so each query MUST be fully self-contained and explicit.
 For example, if the user previously asked about Warsaw and now asks "What about gas stations there?", the query must be "gas stations in Warsaw", NOT "gas stations there".
-4. STATUS EVALUATION:
-   - Set status to "in_progress" if the task has sufficient context to be executed directly by the sub-agent.
-   - Set status to "context" ONLY if crucial information is missing (e.g., location, specific mandatory parameters).
+Do not decide whether a task is missing information. A sub-agent that needs more asks for it itself.
 ---
 You must respond strictly in JSON format. Return only task. Here is the form:
 
@@ -50,7 +48,6 @@ You must respond strictly in JSON format. Return only task. Here is the form:
     {{
         "id": "int",
         "query": "A fully self-contained query with all references resolved from conversation history",
-        "status": "in_progress",
         "assigned_agent": null,
         "result": null,
         "parameters": null
