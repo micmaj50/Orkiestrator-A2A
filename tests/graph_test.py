@@ -4,8 +4,11 @@
 import asyncio
 import uuid
 
+from a2a.types import AgentCard
 import pytest
+from a2a.types import TaskState
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 from agents import graph as graph_module
 from agents.graph import graph, route_from_orchestrator
@@ -52,19 +55,20 @@ class FakeLlm:
 
 
 class FakeSubAgents:
-    """Replaces `call_sub_agent`: records the query and the target URL."""
+    """Replaces `call_sub_agent`: records the query and the card's URL."""
 
     def __init__(self, broken_url: str | None = None):
         self.calls: list[tuple[str, str]] = []
         self.broken_url = broken_url
 
-    async def __call__(self, user_request: str, agent_url: str) -> str:
+    async def __call__(self, user_request: str, agent_card: AgentCard) -> tuple:
+        agent_url = str(agent_card.supported_interfaces[0].url)
         self.calls.append((user_request, agent_url))
 
         if agent_url == self.broken_url:
             raise RuntimeError('sub-agent is down')
 
-        return f'answer from {agent_url}'
+        return TaskState.TASK_STATE_COMPLETED, f'answer from {agent_url}'
 
 
 def task(agent: str, query: str | None = None, task_id=1) -> dict:
@@ -105,7 +109,7 @@ def run_flow(monkeypatch):
             tasks=[],
             )
         t_id = thread_id or str(uuid.uuid4())
-        config = {"configurable": {"thread_id": t_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": t_id}}
         return asyncio.run(graph.ainvoke(state, config)), llm, sub_agents
 
     return _run
@@ -282,3 +286,169 @@ def test_route_from_orchestrator(tasks, expected):
     )
 
     assert route_from_orchestrator(state) == expected
+
+
+def test_register_remote_agents_merges_cards_and_reports_errors(monkeypatch, capsys):
+    local_card = object()
+    remote_card = object()
+    conflicting_card = object()
+    cards = {"local_agent": local_card}
+    configs = [object()]
+
+    monkeypatch.setattr(graph_module, "_remote_agents_loaded", False)
+    monkeypatch.setattr(
+        graph_module,
+        "load_remote_agent_configs",
+        lambda: (configs, ["invalid configuration"])
+    )
+    monkeypatch.setattr(graph_module, "get_sub_agent_cards", lambda: cards)
+
+    async def fake_fetch_remote_agent_cards(received_configs):
+        assert received_configs == configs
+        return (
+            {
+                "remote_agent": remote_card,
+                "local_agent": conflicting_card
+            },
+            ["unavailable endpoint"]
+        )
+
+    monkeypatch.setattr(
+        graph_module,
+        "fetch_remote_agent_cards",
+        fake_fetch_remote_agent_cards
+    )
+
+    asyncio.run(graph_module.register_remote_agents())
+    output = capsys.readouterr().out
+
+    assert cards == {
+        "local_agent": local_card,
+        "remote_agent": remote_card
+    }
+    assert "invalid configuration" in output
+    assert "unavailable endpoint" in output
+    assert "conflicts with a local agent" in output
+
+
+def test_register_remote_agents_retries_when_all_fetches_fail(monkeypatch):
+    cards = {}
+    configs = [object()]
+    fetch_calls = 0
+    remote_card = object()
+
+    monkeypatch.setattr(graph_module, "_remote_agents_loaded", False)
+    monkeypatch.setattr(graph_module, "qdrant_client", None)
+    monkeypatch.setattr(
+        graph_module,
+        "load_remote_agent_configs",
+        lambda: (configs, []),
+    )
+    monkeypatch.setattr(graph_module, "get_sub_agent_cards", lambda: cards)
+
+    async def fake_fetch_remote_agent_cards(_configs):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        if fetch_calls == 1:
+            return {}, ["unavailable endpoint"]
+        return {"remote_agent": remote_card}, []
+
+    monkeypatch.setattr(
+        graph_module,
+        "fetch_remote_agent_cards",
+        fake_fetch_remote_agent_cards,
+    )
+
+    asyncio.run(graph_module.register_remote_agents())
+    assert graph_module._remote_agents_loaded is False
+
+    asyncio.run(graph_module.register_remote_agents())
+
+    assert fetch_calls == 2
+    assert graph_module._remote_agents_loaded is True
+    assert cards == {"remote_agent": remote_card}
+
+
+def test_register_remote_agents_reindexes_qdrant_after_late_registration(monkeypatch):
+    cards = {}
+    qdrant = object()
+    uploaded = []
+
+    monkeypatch.setattr(graph_module, "_remote_agents_loaded", False)
+    monkeypatch.setattr(graph_module, "qdrant_client", qdrant)
+    monkeypatch.setattr(
+        graph_module,
+        "load_remote_agent_configs",
+        lambda: ([object()], []),
+    )
+    monkeypatch.setattr(graph_module, "get_sub_agent_cards", lambda: cards)
+
+    async def fake_fetch_remote_agent_cards(_configs):
+        return {"remote_agent": object()}, []
+
+    monkeypatch.setattr(
+        graph_module,
+        "fetch_remote_agent_cards",
+        fake_fetch_remote_agent_cards,
+    )
+    monkeypatch.setattr(
+        graph_module,
+        "upload_agents_cards",
+        lambda client, agent_cards: uploaded.append((client, dict(agent_cards))),
+    )
+
+    asyncio.run(graph_module.register_remote_agents())
+
+    assert uploaded == [(qdrant, cards)]
+
+
+def test_register_remote_agents_runs_only_once(monkeypatch):
+    load_calls = 0
+
+    def fake_load_remote_agent_configs():
+        nonlocal load_calls
+        load_calls += 1
+        return [], []
+
+    async def fake_fetch_remote_agent_cards(_configs):
+        return {}, []
+
+    monkeypatch.setattr(graph_module, "_remote_agents_loaded", False)
+    monkeypatch.setattr(
+        graph_module,
+        "load_remote_agent_configs",
+        fake_load_remote_agent_configs
+    )
+    monkeypatch.setattr(
+        graph_module,
+        "fetch_remote_agent_cards",
+        fake_fetch_remote_agent_cards
+    )
+    monkeypatch.setattr(graph_module, "get_sub_agent_cards", lambda: {})
+
+    asyncio.run(graph_module.register_remote_agents())
+    asyncio.run(graph_module.register_remote_agents())
+
+    assert load_calls == 1
+@pytest.mark.parametrize(('task_state', 'expected'), [
+    (TaskState.TASK_STATE_COMPLETED, WorkItemStatus.COMPLETED),
+    (TaskState.TASK_STATE_INPUT_REQUIRED, WorkItemStatus.CONTEXT),
+    (TaskState.TASK_STATE_FAILED, WorkItemStatus.FAILED),
+    (TaskState.TASK_STATE_REJECTED, WorkItemStatus.FAILED),
+])
+def test_how_the_sub_agent_ended_becomes_the_work_item_status(monkeypatch, task_state, expected):
+    """A sub-agent that answered is not a sub-agent that succeeded."""
+
+    async def sub_agent(user_request, agent_card):
+        return task_state, 'what the agent said'
+
+    monkeypatch.setattr(graph_module, 'call_sub_agent', sub_agent)
+
+    state = GraphState(
+        user_input=HumanMessage(content='find gas'),
+        tasks=[WorkItem(id=1, assigned_agent='gas_agent', query='find gas')],
+    )
+
+    result = asyncio.run(graph_module.agent_node(state))
+
+    assert result['tasks'][0].status == expected

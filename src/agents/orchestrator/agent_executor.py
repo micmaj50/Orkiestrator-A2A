@@ -11,6 +11,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langfuse import get_client, observe
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
@@ -33,7 +34,10 @@ class Orchestrator:
     )
     async def invoke(self, user_request: str, thread_id: str) -> str:
 
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": get_graph_recursion_limit()}
+        config: RunnableConfig = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": get_graph_recursion_limit()
+        }
 
         state = await graph.aget_state(config)
         is_paused = len(state.next) > 0 if state else False
@@ -102,6 +106,9 @@ class OrchestratorExecutor(AgentExecutor):
             event_queue: EventQueue,
             ) -> None:
 
+        if context.message is None:
+            raise ValueError('RequestContext carries no incoming message.')
+
         # 1. Reuse the current task or create one for a new request
         if context.current_task:
             task = context.current_task
@@ -152,7 +159,7 @@ class OrchestratorExecutor(AgentExecutor):
             print('Orchestrator result: ', result)
 
             # 5. Update task status to completed
-            config = {"configurable": {"thread_id": thread_id}}
+            config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
             graph_state = await graph.aget_state(config)
 
             if graph_state and graph_state.next:
@@ -176,6 +183,11 @@ class OrchestratorExecutor(AgentExecutor):
             await task_updater.update_status(
                 state=TaskState.TASK_STATE_FAILED,
                 message=new_text_message('The request could not be completed. Please try rephrasing it.'),
+            )
+        except Exception as exc:
+            await task_updater.update_status(
+                state=TaskState.TASK_STATE_FAILED,
+                message=new_text_message(f'The request could not be completed: {exc}'),
             )
 
 

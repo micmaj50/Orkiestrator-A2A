@@ -1,8 +1,11 @@
-from a2a.types import AgentCard, AgentSkill
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
-from FlagEmbedding import BGEM3FlagModel
+from typing import Any, cast
 
+from a2a.types import AgentCard, AgentSkill
+from FlagEmbedding import BGEM3FlagModel
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, PointStruct, VectorParams
+
+from config import get_min_skill_score
 
 COLLECTION_NAME = "agent_skills"
 
@@ -29,17 +32,19 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
     Returns
     -------
     str | None
-        The name of the best matching agent, or None if no matching point/payload is found.
+        The name of the best matching agent, or None when nothing is close
+        enough to count as a match.
     """
 
 
     model = _get_embedding_model()
-    query_vector = model.encode([query_text])["dense_vecs"][0].tolist()
+    query_vector = cast(Any, model.encode([query_text])["dense_vecs"])[0].tolist()
 
     response = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
         limit=1,
+        score_threshold=get_min_skill_score(),
     )
 
     if response.points and response.points[0].payload:
@@ -50,7 +55,7 @@ def search_skill(client: QdrantClient, query_text: str) -> str | None:
 
 
 
-def _skill_to_text(card: AgentCard, skill: AgentSkill) -> str:
+def _skill_to_text(card: AgentCard, skill: AgentSkill) -> list[str]:
     tags = ". ".join(skill.tags or [])
 
     skill_text = (
@@ -80,7 +85,7 @@ def upload_agents_cards(client: QdrantClient, agent_cards: dict[str, AgentCard])
     for agent_name, card in sorted(agent_cards.items()):
         for skill in card.skills or []:
             for text in _skill_to_text(card, skill):
-                vector = model.encode([text])["dense_vecs"][0].tolist()
+                vector = cast(Any, model.encode([text])["dense_vecs"])[0].tolist()
 
                 points.append(
                     PointStruct(
