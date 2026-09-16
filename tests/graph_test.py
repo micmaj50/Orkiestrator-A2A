@@ -219,6 +219,35 @@ def test_agent_node_falls_back_to_the_user_input_when_query_is_missing(monkeypat
 
     assert result["tasks"][0].status == WorkItemStatus.COMPLETED
 
+
+def test_agent_node_keeps_the_raw_result_out_of_the_conversation_history(monkeypatch):
+    """The result belongs to the task; history must not collect raw agent answers."""
+
+    sub_agents = FakeSubAgents()
+
+    monkeypatch.setattr(
+        graph_module,
+        "call_sub_agent",
+        sub_agents
+    )
+
+    state = GraphState(
+        user_input=HumanMessage(content="I am hungry"),
+        tasks=[
+            WorkItem(
+                id=1,
+                assigned_agent="food_agent",
+                query="find food"
+            )
+        ]
+    )
+
+    result = asyncio.run(graph_module.agent_node(state))
+
+    assert result["tasks"][0].result
+    assert "messages" not in result
+
+
 def test_failing_sub_agent_is_recorded_and_does_not_break_the_flow(run_flow):
     """A dead sub-agent marks its task FAILED, the rest of the flow continues."""
 

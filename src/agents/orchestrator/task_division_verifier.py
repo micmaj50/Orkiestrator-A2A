@@ -33,6 +33,8 @@ Check whether:
 5. Important constraints, such as location, are preserved.
 6. A simple request was not divided into too many tasks.
 7. Different user needs are separated when appropriate.
+8. Tasks cover only the current user request. Topics that come from earlier turns
+   and are not part of the current request must not be re-run.
 
 Do not evaluate assigned agents. Agent selection is performed later.
 
@@ -75,6 +77,7 @@ Choose the candidate that:
 4. Contains clear and self-contained task queries.
 5. Preserves important constraints, such as location.
 6. Uses an appropriate level of task division.
+7. Covers only the current user request, without re-running topics from earlier turns.
 
 Do not evaluate assigned agents. Agent selection is performed later.
 

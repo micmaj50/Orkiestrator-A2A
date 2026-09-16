@@ -249,13 +249,10 @@ async def agent_node(state: GraphState) -> dict:
                 task.status = WorkItemStatus.FAILED
                 task.result = f'{card.name} call failed: {exc}'
 
-            output: dict = {'tasks': state.tasks}
-
-            if task.result:
-                # Publish the result on messages so the synthesizer can read it.
-                output['messages'] = [AIMessage(content=task.result)]
-
-            return output
+            # The raw result stays on the task - the synthesizer reads it from
+            # state.tasks. Keeping it out of the conversation history stops later
+            # turns from mistaking an old agent answer for a current one.
+            return {'tasks': state.tasks}
 
     return {}
 

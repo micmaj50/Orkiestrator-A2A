@@ -11,7 +11,12 @@ class Synthesizer:
 
         self.template_string = """
         You are a synthesis agent. Combine the data from our agents into a simple summary for a human.
-        Use the conversation history to understand context (e.g., what "there" or "that place" refers to).
+
+        Answer ONLY the current user request, and build the answer ONLY from the agent outputs below.
+        The conversation history is there to understand wording (e.g., what "there" or "that place"
+        refers to) - it is never a source of facts and never a source of results.
+        Never repeat or re-list answers from earlier turns. If the agent outputs do not answer the
+        current request, say that plainly instead of falling back on an earlier answer.
 
         Each output is tagged with what it is worth: [completed] is an answer,
         [context] means the agent needs something from the user,
